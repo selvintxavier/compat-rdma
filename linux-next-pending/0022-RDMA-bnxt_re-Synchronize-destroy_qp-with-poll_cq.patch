@@ -1,0 +1,201 @@
+From 5de532397addc83952e76476765ea339c7ac865b Mon Sep 17 00:00:00 2001
+From: Selvin Xavier <selvin.xavier@broadcom.com>
+Date: Thu, 15 Feb 2018 21:20:11 -0800
+Subject: [PATCH 3/8] RDMA/bnxt_re: Synchronize destroy_qp with poll_cq
+
+Avoid system crash when destroy_qp is invoked while
+the driver is processing the poll_cq. Synchronize these
+functions using the cq_lock.
+
+Signed-off-by: Selvin Xavier <selvin.xavier@broadcom.com>
+Signed-off-by: Doug Ledford <dledford@redhat.com>
+---
+ drivers/infiniband/hw/bnxt_re/ib_verbs.c | 39 +++++++++++++++++++++++++++++---
+ drivers/infiniband/hw/bnxt_re/ib_verbs.h |  2 ++
+ drivers/infiniband/hw/bnxt_re/qplib_fp.c | 21 +++++------------
+ drivers/infiniband/hw/bnxt_re/qplib_fp.h |  4 +++-
+ 4 files changed, 47 insertions(+), 19 deletions(-)
+
+diff --git a/drivers/infiniband/hw/bnxt_re/ib_verbs.c b/drivers/infiniband/hw/bnxt_re/ib_verbs.c
+index 040eace..29c62e4 100644
+--- a/drivers/infiniband/hw/bnxt_re/ib_verbs.c
++++ b/drivers/infiniband/hw/bnxt_re/ib_verbs.c
+@@ -860,20 +860,51 @@ int bnxt_re_query_ah(struct ib_ah *ib_ah, struct ib_ah_attr *ah_attr)
+ 	return 0;
+ }
+ 
++static unsigned long bnxt_re_lock_cqs(struct bnxt_re_qp *qp)
++	__acquires(&qp->scq->cq_lock) __acquires(&qp->rcq->cq_lock)
++{
++	unsigned long flags;
++
++	spin_lock_irqsave(&qp->scq->cq_lock, flags);
++	if (qp->rcq != qp->scq)
++		spin_lock(&qp->rcq->cq_lock);
++	else
++		__acquire(&qp->rcq->cq_lock);
++
++	return flags;
++}
++
++static void bnxt_re_unlock_cqs(struct bnxt_re_qp *qp,
++			       unsigned long flags)
++	__releases(&qp->scq->cq_lock) __releases(&qp->rcq->cq_lock)
++{
++	if (qp->rcq != qp->scq)
++		spin_unlock(&qp->rcq->cq_lock);
++	else
++		__release(&qp->rcq->cq_lock);
++	spin_unlock_irqrestore(&qp->scq->cq_lock, flags);
++}
++
+ /* Queue Pairs */
+ int bnxt_re_destroy_qp(struct ib_qp *ib_qp)
+ {
+ 	struct bnxt_re_qp *qp = container_of(ib_qp, struct bnxt_re_qp, ib_qp);
+ 	struct bnxt_re_dev *rdev = qp->rdev;
+ 	int rc;
++	unsigned int flags;
+ 
+ 	bnxt_qplib_flush_cqn_wq(&qp->qplib_qp);
+-	bnxt_qplib_del_flush_qp(&qp->qplib_qp);
+ 	rc = bnxt_qplib_destroy_qp(&rdev->qplib_res, &qp->qplib_qp);
+ 	if (rc) {
+ 		dev_err(rdev_to_dev(rdev), "Failed to destroy HW QP");
+ 		return rc;
+ 	}
++
++	flags = bnxt_re_lock_cqs(qp);
++	bnxt_qplib_clean_qp(&qp->qplib_qp);
++	bnxt_re_unlock_cqs(qp, flags);
++	bnxt_qplib_free_qp_res(&rdev->qplib_res, &qp->qplib_qp);
++
+ 	if (ib_qp->qp_type == IB_QPT_GSI && rdev->qp1_sqp) {
+ 		rc = bnxt_qplib_destroy_ah(&rdev->qplib_res,
+ 					   &rdev->sqp_ah->qplib_ah);
+@@ -883,7 +914,7 @@ int bnxt_re_destroy_qp(struct ib_qp *ib_qp)
+ 			return rc;
+ 		}
+ 
+-		bnxt_qplib_del_flush_qp(&qp->qplib_qp);
++		bnxt_qplib_clean_qp(&qp->qplib_qp);
+ 		rc = bnxt_qplib_destroy_qp(&rdev->qplib_res,
+ 					   &rdev->qp1_sqp->qplib_qp);
+ 		if (rc) {
+@@ -1143,6 +1174,7 @@ struct ib_qp *bnxt_re_create_qp(struct ib_pd *ib_pd,
+ 			goto fail;
+ 		}
+ 		qp->qplib_qp.scq = &cq->qplib_cq;
++		qp->scq = cq;
+ 	}
+ 
+ 	if (qp_init_attr->recv_cq) {
+@@ -1154,6 +1186,7 @@ struct ib_qp *bnxt_re_create_qp(struct ib_pd *ib_pd,
+ 			goto fail;
+ 		}
+ 		qp->qplib_qp.rcq = &cq->qplib_cq;
++		qp->rcq = cq;
+ 	}
+ 
+ 	if (qp_init_attr->srq) {
+@@ -1450,7 +1483,7 @@ int bnxt_re_modify_qp(struct ib_qp *ib_qp, struct ib_qp_attr *qp_attr,
+ 			dev_dbg(rdev_to_dev(rdev),
+ 				"Move QP = %p out of flush list\n",
+ 				qp);
+-			bnxt_qplib_del_flush_qp(&qp->qplib_qp);
++			bnxt_qplib_clean_qp(&qp->qplib_qp);
+ 		}
+ 	}
+ 	if (qp_attr_mask & IB_QP_EN_SQD_ASYNC_NOTIFY) {
+diff --git a/drivers/infiniband/hw/bnxt_re/ib_verbs.h b/drivers/infiniband/hw/bnxt_re/ib_verbs.h
+index 87c2b4a..ed1890d 100644
+--- a/drivers/infiniband/hw/bnxt_re/ib_verbs.h
++++ b/drivers/infiniband/hw/bnxt_re/ib_verbs.h
+@@ -80,6 +80,8 @@ struct bnxt_re_qp {
+ 	/* QP1 */
+ 	u32			send_psn;
+ 	struct ib_ud_header	qp1_hdr;
++	struct bnxt_re_cq	*scq;
++	struct bnxt_re_cq	*rcq;
+ };
+ 
+ struct bnxt_re_cq {
+diff --git a/drivers/infiniband/hw/bnxt_re/qplib_fp.c b/drivers/infiniband/hw/bnxt_re/qplib_fp.c
+index c84fe12..f6248bf 100644
+--- a/drivers/infiniband/hw/bnxt_re/qplib_fp.c
++++ b/drivers/infiniband/hw/bnxt_re/qplib_fp.c
+@@ -177,7 +177,7 @@ static void __bnxt_qplib_del_flush_qp(struct bnxt_qplib_qp *qp)
+ 	}
+ }
+ 
+-void bnxt_qplib_del_flush_qp(struct bnxt_qplib_qp *qp)
++void bnxt_qplib_clean_qp(struct bnxt_qplib_qp *qp)
+ {
+ 	unsigned long flags;
+ 
+@@ -1161,7 +1161,6 @@ int bnxt_qplib_destroy_qp(struct bnxt_qplib_res *res,
+ 	struct bnxt_qplib_rcfw *rcfw = res->rcfw;
+ 	struct cmdq_destroy_qp req;
+ 	struct creq_destroy_qp_resp resp;
+-	unsigned long flags;
+ 	u16 cmd_flags = 0;
+ 	int rc;
+ 
+@@ -1179,19 +1178,12 @@ int bnxt_qplib_destroy_qp(struct bnxt_qplib_res *res,
+ 		return rc;
+ 	}
+ 
+-	/* Must walk the associated CQs to nullified the QP ptr */
+-	spin_lock_irqsave(&qp->scq->hwq.lock, flags);
+-
+-	__clean_cq(qp->scq, (u64)(unsigned long)qp);
+-
+-	if (qp->rcq && qp->rcq != qp->scq) {
+-		spin_lock(&qp->rcq->hwq.lock);
+-		__clean_cq(qp->rcq, (u64)(unsigned long)qp);
+-		spin_unlock(&qp->rcq->hwq.lock);
+-	}
+-
+-	spin_unlock_irqrestore(&qp->scq->hwq.lock, flags);
++	return 0;
++}
+ 
++void bnxt_qplib_free_qp_res(struct bnxt_qplib_res *res,
++			    struct bnxt_qplib_qp *qp)
++{
+ 	bnxt_qplib_free_qp_hdr_buf(res, qp);
+ 	bnxt_qplib_free_hwq(res->pdev, &qp->sq.hwq);
+ 	kfree(qp->sq.swq);
+@@ -1204,7 +1196,6 @@ int bnxt_qplib_destroy_qp(struct bnxt_qplib_res *res,
+ 	if (qp->orrq.max_elements)
+ 		bnxt_qplib_free_hwq(res->pdev, &qp->orrq);
+ 
+-	return 0;
+ }
+ 
+ void *bnxt_qplib_get_qp1_sq_buf(struct bnxt_qplib_qp *qp,
+diff --git a/drivers/infiniband/hw/bnxt_re/qplib_fp.h b/drivers/infiniband/hw/bnxt_re/qplib_fp.h
+index c582d4e..90ace2f 100644
+--- a/drivers/infiniband/hw/bnxt_re/qplib_fp.h
++++ b/drivers/infiniband/hw/bnxt_re/qplib_fp.h
+@@ -448,6 +448,9 @@ int bnxt_qplib_create_qp(struct bnxt_qplib_res *res, struct bnxt_qplib_qp *qp);
+ int bnxt_qplib_modify_qp(struct bnxt_qplib_res *res, struct bnxt_qplib_qp *qp);
+ int bnxt_qplib_query_qp(struct bnxt_qplib_res *res, struct bnxt_qplib_qp *qp);
+ int bnxt_qplib_destroy_qp(struct bnxt_qplib_res *res, struct bnxt_qplib_qp *qp);
++void bnxt_qplib_clean_qp(struct bnxt_qplib_qp *qp);
++void bnxt_qplib_free_qp_res(struct bnxt_qplib_res *res,
++			    struct bnxt_qplib_qp *qp);
+ void *bnxt_qplib_get_qp1_sq_buf(struct bnxt_qplib_qp *qp,
+ 				struct bnxt_qplib_sge *sge);
+ void *bnxt_qplib_get_qp1_rq_buf(struct bnxt_qplib_qp *qp,
+@@ -470,7 +473,6 @@ void bnxt_qplib_req_notify_cq(struct bnxt_qplib_cq *cq, u32 arm_type);
+ void bnxt_qplib_free_nq(struct bnxt_qplib_nq *nq);
+ int bnxt_qplib_alloc_nq(struct pci_dev *pdev, struct bnxt_qplib_nq *nq);
+ void bnxt_qplib_add_flush_qp(struct bnxt_qplib_qp *qp);
+-void bnxt_qplib_del_flush_qp(struct bnxt_qplib_qp *qp);
+ void bnxt_qplib_acquire_cq_locks(struct bnxt_qplib_qp *qp,
+ 				 unsigned long *flags);
+ void bnxt_qplib_release_cq_locks(struct bnxt_qplib_qp *qp,
+-- 
+1.8.3.1
+
