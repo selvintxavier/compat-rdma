@@ -1,0 +1,56 @@
+From b89ed87b77db0910923dba78e3826e495807949d Mon Sep 17 00:00:00 2001
+From: Selvin Xavier <selvin.xavier@broadcom.com>
+Date: Mon, 12 Mar 2018 22:03:55 -0700
+Subject: [PATCH] bnxt_en: Adding device ids of BCM5880x devices
+
+Adding the PCI ids of BCM5880x devices
+
+Signed-off-by: Selvin Xavier <selvin.xavier@broadcom.com>
+---
+ drivers/net/ethernet/broadcom/bnxt/bnxt.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/drivers/net/ethernet/broadcom/bnxt/bnxt.c b/drivers/net/ethernet/broadcom/bnxt/bnxt.c
+index 7a2aa02..64959d9 100644
+--- a/drivers/net/ethernet/broadcom/bnxt/bnxt.c
++++ b/drivers/net/ethernet/broadcom/bnxt/bnxt.c
+@@ -107,6 +107,9 @@ enum board_idx {
+ 	BCM57454,
+ 	NETXTREME_E_VF,
+ 	NETXTREME_C_VF,
++	BCM58802,
++	BCM58804,
++	NETXTREME_S_VF,
+ };
+ 
+ /* indexed by enum above */
+@@ -143,6 +146,9 @@ static const struct {
+ 	{ "Broadcom BCM57454 NetXtreme-E 10Gb/25Gb/40Gb/50Gb/100Gb Ethernet" },
+ 	{ "Broadcom NetXtreme-E Ethernet Virtual Function" },
+ 	{ "Broadcom NetXtreme-C Ethernet Virtual Function" },
++	{ "Broadcom BCM58802 NetXtreme-S 10Gb/25Gb/40Gb/50Gb Ethernet" },
++	{ "Broadcom BCM58804 NetXtreme-S 10Gb/25Gb/40Gb/50Gb/100Gb Ethernet" },
++	{ "Broadcom NetXtreme-S Ethernet Virtual Function" },
+ };
+ 
+ static const struct pci_device_id bnxt_pci_tbl[] = {
+@@ -178,6 +184,8 @@ static const struct pci_device_id bnxt_pci_tbl[] = {
+ 	{ PCI_VDEVICE(BROADCOM, 0x16ef), .driver_data = BCM57416_NPAR },
+ 	{ PCI_VDEVICE(BROADCOM, 0x16f1), .driver_data = BCM57452 },
+ 	{ PCI_VDEVICE(BROADCOM, 0x1614), .driver_data = BCM57454 },
++	{ PCI_VDEVICE(BROADCOM, 0xd802), .driver_data = BCM58802 },
++        { PCI_VDEVICE(BROADCOM, 0xd804), .driver_data = BCM58804 },
+ #ifdef CONFIG_BNXT_SRIOV
+ 	{ PCI_VDEVICE(BROADCOM, 0x16c1), .driver_data = NETXTREME_E_VF },
+ 	{ PCI_VDEVICE(BROADCOM, 0x16cb), .driver_data = NETXTREME_C_VF },
+@@ -185,6 +193,7 @@ static const struct pci_device_id bnxt_pci_tbl[] = {
+ 	{ PCI_VDEVICE(BROADCOM, 0x16dc), .driver_data = NETXTREME_E_VF },
+ 	{ PCI_VDEVICE(BROADCOM, 0x16e1), .driver_data = NETXTREME_C_VF },
+ 	{ PCI_VDEVICE(BROADCOM, 0x16e5), .driver_data = NETXTREME_C_VF },
++	{ PCI_VDEVICE(BROADCOM, 0xd800), .driver_data = NETXTREME_S_VF },
+ #endif
+ 	{ 0 }
+ };
+-- 
+1.8.3.1
+
