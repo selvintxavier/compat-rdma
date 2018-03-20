@@ -1,0 +1,48 @@
+From 12113a35ada6bba074836d3d26671213e12069bf Mon Sep 17 00:00:00 2001
+From: Noa Osherovich <noaos@mellanox.com>
+Date: Thu, 20 Apr 2017 20:53:31 +0300
+Subject: [PATCH] IB/core: Add HDR speed enum
+
+Add high data rate speed to the ib_port_speed enumeration.
+
+Signed-off-by: Noa Osherovich <noaos@mellanox.com>
+Signed-off-by: Eran Ben Elisha <eranbe@mellanox.com>
+Signed-off-by: Leon Romanovsky <leon@kernel.org>
+Signed-off-by: Doug Ledford <dledford@redhat.com>
+---
+ drivers/infiniband/core/sysfs.c | 4 ++++
+ include/rdma/ib_verbs.h         | 3 ++-
+ 2 files changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/infiniband/core/sysfs.c b/drivers/infiniband/core/sysfs.c
+index 48bb755..7ebe1ef 100644
+--- a/drivers/infiniband/core/sysfs.c
++++ b/drivers/infiniband/core/sysfs.c
+@@ -253,6 +253,10 @@ static ssize_t rate_show(struct ib_port *p, struct port_attribute *unused,
+ 		speed = " EDR";
+ 		rate = 250;
+ 		break;
++	case IB_SPEED_HDR:
++		speed = " HDR";
++		rate = 500;
++		break;
+ 	case IB_SPEED_SDR:
+ 	default:		/* default to SDR for invalid rates */
+ 		rate = 25;
+diff --git a/include/rdma/ib_verbs.h b/include/rdma/ib_verbs.h
+index 56fa31e..91686d2 100644
+--- a/include/rdma/ib_verbs.h
++++ b/include/rdma/ib_verbs.h
+@@ -433,7 +433,8 @@ enum ib_port_speed {
+ 	IB_SPEED_QDR	= 4,
+ 	IB_SPEED_FDR10	= 8,
+ 	IB_SPEED_FDR	= 16,
+-	IB_SPEED_EDR	= 32
++	IB_SPEED_EDR	= 32,
++	IB_SPEED_HDR	= 64
+ };
+ 
+ /**
+-- 
+2.5.5
+
