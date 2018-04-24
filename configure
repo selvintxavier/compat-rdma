@@ -997,12 +997,6 @@ fi
 		ex ${CWD}/ofed_scripts/ofed_patch.sh ${ofed_patch_params}
 	fi
 
-	if [[ ! -e .xeon_phi_applied && "X$CONFIG_IBP_SERVER" == "Xm" ]]; then
-		echo ".xeon_phi_applied does not exist. running ofed-patch.sh for xeon-phi"
-		ex ${CWD}/ofed_scripts/ofed_patch.sh --with-patchdir=tech-preview/xeon-phi
-		touch .xeon_phi_applied
-	fi
-
 # Configfs requires CONFIGFS_FS to be enabled in the kernel
 if [ "X${CONFIG_INFINIBAND_ADDR_TRANS}" == "Xy" ]; then
     check_autofconf CONFIGFS_FS
