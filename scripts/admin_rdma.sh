@@ -229,6 +229,7 @@ mkdir -p $COMPAT include/{linux,net}
 echo "Copying $GIT_COMPAT_TREE/ files..."
 cp $GIT_COMPAT_TREE/compat/*.[ch] $COMPAT/
 cp $GIT_COMPAT_TREE/compat/Makefile $COMPAT/
+cp $GIT_COMPAT_TREE/compat/Kconfig $COMPAT/
 cp $GIT_COMPAT_TREE/autogen.sh $COMPAT/
 cp $GIT_COMPAT_TREE/configure.ac $COMPAT/
 cp -a $GIT_COMPAT_TREE/build $COMPAT/
