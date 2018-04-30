@@ -848,12 +848,22 @@ main()
 
 	#Set default values
 	KVERSION=${KVERSION:-$(uname -r)}
-	MIN_KVERSION="2.6.5"
+	MIN_KVERSION="3.10"
 	MODULES_DIR=${MODULES_DIR:-/lib/modules/${KVERSION}/updates}
 	KSRC=${KSRC:-/lib/modules/${KVERSION}/source}
 	KSRC_OBJ=${KSRC_OBJ:-/lib/modules/$KVERSION/build}
 
 	ARCH=${ARCH:-$(uname -m)}
+
+	case $KVERSION in
+		4\.17*)
+		CONFIG_COMPAT_RDMA=
+		;;
+		*)
+		CONFIG_COMPAT_RDMA=m
+		;;
+	esac
+
 
 	case $ARCH in
 		ppc*)

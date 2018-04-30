@@ -1,4 +1,4 @@
-obj-y := compat/
+obj-$(CONFIG_COMPAT_RDMA) := compat/
 obj-$(CONFIG_INFINIBAND)        += drivers/infiniband/
 obj-$(CONFIG_CHELSIO_T3)        += drivers/net/ethernet/chelsio/cxgb3/
 obj-$(CONFIG_CHELSIO_T4)        += drivers/net/ethernet/chelsio/cxgb4/
