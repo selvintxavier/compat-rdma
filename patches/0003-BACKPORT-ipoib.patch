@@ -1,0 +1,241 @@
+From: Vladimir Sokolovsky <vlad@mellanox.com>
+Subject: [PATCH] BACKPORT: ipoib
+
+Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
+---
+ drivers/infiniband/ulp/ipoib/ipoib_main.c    | 50 +++++++++++++++++++++++++++-
+ drivers/infiniband/ulp/ipoib/ipoib_netlink.c | 31 ++++++++++++++++-
+ 2 files changed, 79 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/infiniband/ulp/ipoib/ipoib_main.c b/drivers/infiniband/ulp/ipoib/ipoib_main.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/infiniband/ulp/ipoib/ipoib_main.c
++++ b/drivers/infiniband/ulp/ipoib/ipoib_main.c
+@@ -258,14 +258,21 @@ static int ipoib_change_mtu(struct net_device *dev, int new_mtu)
+ 				"link layer MTU - 4 (%u)\n", priv->mcast_mtu);
+ 
+ 	new_mtu = min(priv->mcast_mtu, priv->admin_mtu);
+-
++#ifdef HAVE_NDO_CHANGE_MTU_EXTENDED
++	if (priv->rn_ops->extended.ndo_change_mtu) {
++#else
+ 	if (priv->rn_ops->ndo_change_mtu) {
++#endif
+ 		bool carrier_status = netif_carrier_ok(dev);
+ 
+ 		netif_carrier_off(dev);
+ 
+ 		/* notify lower level on the real mtu */
++#ifdef HAVE_NDO_CHANGE_MTU_EXTENDED
++		ret = priv->rn_ops->extended.ndo_change_mtu(dev, new_mtu);
++#else
+ 		ret = priv->rn_ops->ndo_change_mtu(dev, new_mtu);
++#endif
+ 
+ 		if (carrier_status)
+ 			netif_carrier_on(dev);
+@@ -303,9 +310,21 @@ static bool ipoib_is_dev_match_addr_rcu(const struct sockaddr *addr,
+ 		if (!in_dev)
+ 			return false;
+ 
++#ifdef HAVE_INET_CONFIRM_ADDR_EXPORTED
++#ifdef HAVE_INET_CONFIRM_ADDR_5_PARAMS
+ 		ret_addr = inet_confirm_addr(net, in_dev, 0,
+ 					     addr_in->sin_addr.s_addr,
+ 					     RT_SCOPE_HOST);
++#else
++		ret_addr = inet_confirm_addr(in_dev, 0,
++					     addr_in->sin_addr.s_addr,
++					     RT_SCOPE_HOST);
++#endif
++#else
++		ret_addr = confirm_addr_indev(in_dev, 0,
++					      addr_in->sin_addr.s_addr,
++					      RT_SCOPE_HOST);
++#endif
+ 		in_dev_put(in_dev);
+ 		if (ret_addr)
+ 			return true;
+@@ -1868,6 +1887,7 @@ static int ipoib_get_vf_config(struct net_device *dev, int vf,
+ 	return 0;
+ }
+ 
++#ifdef HAVE_NDO_SET_VF_GUID
+ static int ipoib_set_vf_guid(struct net_device *dev, int vf, u64 guid, int type)
+ {
+ 	struct ipoib_dev_priv *priv = ipoib_priv(dev);
+@@ -1877,6 +1897,7 @@ static int ipoib_set_vf_guid(struct net_device *dev, int vf, u64 guid, int type)
+ 
+ 	return ib_set_vf_guid(priv->ca, vf, priv->port, guid, type);
+ }
++#endif
+ 
+ static int ipoib_get_vf_stats(struct net_device *dev, int vf,
+ 			      struct ifla_vf_stats *vf_stats)
+@@ -1894,7 +1915,11 @@ static const struct net_device_ops ipoib_netdev_ops_pf = {
+ 	.ndo_uninit		 = ipoib_uninit,
+ 	.ndo_open		 = ipoib_open,
+ 	.ndo_stop		 = ipoib_stop,
++#ifdef HAVE_NDO_CHANGE_MTU_EXTENDED
++	.extended.ndo_change_mtu = ipoib_change_mtu,
++#else
+ 	.ndo_change_mtu		 = ipoib_change_mtu,
++#endif
+ 	.ndo_fix_features	 = ipoib_fix_features,
+ 	.ndo_start_xmit		 = ipoib_start_xmit,
+ 	.ndo_tx_timeout		 = ipoib_timeout,
+@@ -1903,7 +1928,9 @@ static const struct net_device_ops ipoib_netdev_ops_pf = {
+ 	.ndo_set_vf_link_state	 = ipoib_set_vf_link_state,
+ 	.ndo_get_vf_config	 = ipoib_get_vf_config,
+ 	.ndo_get_vf_stats	 = ipoib_get_vf_stats,
++#ifdef HAVE_NDO_SET_VF_GUID
+ 	.ndo_set_vf_guid	 = ipoib_set_vf_guid,
++#endif
+ 	.ndo_set_mac_address	 = ipoib_set_mac,
+ 	.ndo_get_stats64	 = ipoib_get_stats,
+ 	.ndo_do_ioctl		 = ipoib_ioctl,
+@@ -1913,7 +1940,11 @@ static const struct net_device_ops ipoib_netdev_ops_vf = {
+ 	.ndo_uninit		 = ipoib_uninit,
+ 	.ndo_open		 = ipoib_open,
+ 	.ndo_stop		 = ipoib_stop,
++#ifdef HAVE_NDO_CHANGE_MTU_EXTENDED
++	.extended.ndo_change_mtu = ipoib_change_mtu,
++#else
+ 	.ndo_change_mtu		 = ipoib_change_mtu,
++#endif
+ 	.ndo_fix_features	 = ipoib_fix_features,
+ 	.ndo_start_xmit	 	 = ipoib_start_xmit,
+ 	.ndo_tx_timeout		 = ipoib_timeout,
+@@ -1985,9 +2016,16 @@ static struct net_device
+ 	struct net_device *dev;
+ 	struct rdma_netdev *rn;
+ 
++#ifdef HAVE_ALLOC_NETDEV_4P
+ 	dev = alloc_netdev((int)sizeof(struct rdma_netdev),
+ 			   name,
+ 			   name_assign_type, setup);
++#else
++	dev = alloc_netdev((int)sizeof(struct rdma_netdev),
++			   name,
++			   setup);
++#endif
++
+ 	if (!dev)
+ 		return NULL;
+ 
+@@ -2012,14 +2050,22 @@ static struct net_device *ipoib_get_netdev(struct ib_device *hca, u8 port,
+ 	if (hca->alloc_rdma_netdev) {
+ 		dev = hca->alloc_rdma_netdev(hca, port,
+ 					     RDMA_NETDEV_IPOIB, name,
++#ifdef NET_NAME_UNKNOWN
+ 					     NET_NAME_UNKNOWN,
++#else
++					     0,		/* NET_NAME_UNKNOWN */
++#endif
+ 					     ipoib_setup_common);
+ 		if (IS_ERR_OR_NULL(dev) && PTR_ERR(dev) != -EOPNOTSUPP)
+ 			return NULL;
+ 	}
+ 
+ 	if (!hca->alloc_rdma_netdev || PTR_ERR(dev) == -EOPNOTSUPP)
++#ifdef NET_NAME_UNKNOWN
+ 		dev = ipoib_create_netdev_default(hca, name, NET_NAME_UNKNOWN,
++#else
++		dev = ipoib_create_netdev_default(hca, name, 0, /* NET_NAME_UNKNOWN, */
++#endif
+ 						  ipoib_setup_common);
+ 
+ 	return dev;
+@@ -2262,7 +2308,9 @@ static struct net_device *ipoib_add_port(const char *format,
+ 	/* MTU will be reset when mcast join happens */
+ 	priv->dev->mtu  = IPOIB_UD_MTU(priv->max_ib_mtu);
+ 	priv->mcast_mtu  = priv->admin_mtu = priv->dev->mtu;
++#ifdef HAVE_NET_DEVICE_MIN_MAX_MTU
+ 	priv->dev->max_mtu = IPOIB_CM_MTU;
++#endif
+ 
+ 	priv->dev->neigh_priv_len = sizeof(struct ipoib_neigh);
+ 
+diff --git a/drivers/infiniband/ulp/ipoib/ipoib_netlink.c b/drivers/infiniband/ulp/ipoib/ipoib_netlink.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/infiniband/ulp/ipoib/ipoib_netlink.c
++++ b/drivers/infiniband/ulp/ipoib/ipoib_netlink.c
+@@ -64,9 +64,14 @@ nla_put_failure:
+ 	return -EMSGSIZE;
+ }
+ 
++#if defined(HAVE_RTNL_LINK_OPS_NEWLINK_5_PARAMS)
+ static int ipoib_changelink(struct net_device *dev, struct nlattr *tb[],
+ 			    struct nlattr *data[],
+ 			    struct netlink_ext_ack *extack)
++#else
++static int ipoib_changelink(struct net_device *dev, struct nlattr *tb[],
++			    struct nlattr *data[])
++#endif
+ {
+ 	u16 mode, umcast;
+ 	int ret = 0;
+@@ -93,9 +98,17 @@ out_err:
+ 	return ret;
+ }
+ 
++#if defined(HAVE_RTNL_LINK_OPS_NEWLINK_5_PARAMS)
+ static int ipoib_new_child_link(struct net *src_net, struct net_device *dev,
+ 				struct nlattr *tb[], struct nlattr *data[],
+ 				struct netlink_ext_ack *extack)
++#elif defined(HAVE_RTNL_LINK_OPS_NEWLINK_4_PARAMS)
++static int ipoib_new_child_link(struct net *src_net, struct net_device *dev,
++				struct nlattr *tb[], struct nlattr *data[])
++#else
++static int ipoib_new_child_link(struct net_device *dev,
++				struct nlattr *tb[], struct nlattr *data[])
++#endif
+ {
+ 	struct net_device *pdev;
+ 	struct ipoib_dev_priv *ppriv;
+@@ -104,8 +117,12 @@ static int ipoib_new_child_link(struct net *src_net, struct net_device *dev,
+ 
+ 	if (!tb[IFLA_LINK])
+ 		return -EINVAL;
+-
++#ifdef HAVE_RTNL_LINK_OPS_NEWLINK_4_PARAMS
+ 	pdev = __dev_get_by_index(src_net, nla_get_u32(tb[IFLA_LINK]));
++#else
++	pdev = __dev_get_by_index(dev_net(dev), nla_get_u32(tb[IFLA_LINK]));
++#endif
++
+ 	if (!pdev || pdev->type != ARPHRD_INFINIBAND)
+ 		return -ENODEV;
+ 
+@@ -135,11 +152,19 @@ static int ipoib_new_child_link(struct net *src_net, struct net_device *dev,
+ 			       child_pkey, IPOIB_RTNL_CHILD);
+ 
+ 	if (!err && data)
++#if defined(HAVE_RTNL_LINK_OPS_NEWLINK_5_PARAMS)
+ 		err = ipoib_changelink(dev, tb, data, extack);
++#else
++		err = ipoib_changelink(dev, tb, data);
++#endif
+ 	return err;
+ }
+ 
++#ifdef HAVE_RTNL_LINK_OPS_DELLINK_2_PARAMS
+ static void ipoib_unregister_child_dev(struct net_device *dev, struct list_head *head)
++#else
++static void ipoib_unregister_child_dev(struct net_device *dev)
++#endif
+ {
+ 	struct ipoib_dev_priv *priv, *ppriv;
+ 
+@@ -147,7 +172,11 @@ static void ipoib_unregister_child_dev(struct net_device *dev, struct list_head
+ 	ppriv = ipoib_priv(priv->parent);
+ 
+ 	down_write(&ppriv->vlan_rwsem);
++#ifdef HAVE_RTNL_LINK_OPS_DELLINK_2_PARAMS
+ 	unregister_netdevice_queue(dev, head);
++#else
++	unregister_netdevice(dev);
++#endif
+ 	list_del(&priv->list);
+ 	up_write(&ppriv->vlan_rwsem);
+ }
