@@ -35,5 +35,6 @@ drivers/scsi/cxgbi/
 drivers/scsi/qedf/
 drivers/scsi/qedi/
 drivers/nvme/
-net/sunrpc/xprtrdma
+net/sunrpc/Kconfig
+net/sunrpc/xprtrdma/
 net/rds/
