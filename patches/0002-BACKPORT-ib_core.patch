@@ -1125,7 +1125,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	/*
  	 * If the combination of the addr and size requested for this memory
-@@ -184,17 +194,34 @@ struct ib_umem *ib_umem_get(struct ib_ucontext *context, unsigned long addr,
+@@ -181,17 +191,34 @@ struct ib_umem *ib_umem_get(struct ib_ucontext *context, unsigned long addr,
  	if (ret)
  		goto out;
  
@@ -1160,7 +1160,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  		if (ret < 0)
  			goto out;
-@@ -218,7 +245,11 @@ struct ib_umem *ib_umem_get(struct ib_ucontext *context, unsigned long addr,
+@@ -215,7 +242,11 @@ struct ib_umem *ib_umem_get(struct ib_ucontext *context, unsigned long addr,
  				  umem->sg_head.sgl,
  				  umem->npages,
  				  DMA_BIDIRECTIONAL,

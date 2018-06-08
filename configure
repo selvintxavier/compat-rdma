@@ -492,7 +492,6 @@ main()
 				CONFIG_MLX5_INFINIBAND="m"
 				CONFIG_BACKPORT_LRO="m"
 				CONFIG_MLX5_DEBUG="y"
-				CONFIG_MLX5_ESWITCH="y"
 				add_conf "# Load MLX5 modules" "MLX5_LOAD=yes"
 				;;
 			--with-mlx4_core-mod)
@@ -505,13 +504,11 @@ main()
 				CONFIG_MLX5_CORE="m"
 				CONFIG_MLX5_CORE_EN="y"
 				CONFIG_MLX5_CORE_EN_DCB="y"
-				CONFIG_MLX5_ESWITCH="y"
 				;;
 			--without-mlx5_core-mod)
 				CONFIG_MLX5_CORE=
 				CONFIG_MLX5_CORE_EN=
 				CONFIG_MLX5_CORE_EN_DCB=
-				CONFIG_MLX5_ESWITCH=
 				;;
 			--without-mlx4-mod)
 				CONFIG_MLX4_CORE=
@@ -524,7 +521,6 @@ main()
 				CONFIG_MLX5_CORE_EN_DCB=
 				CONFIG_MLX5_INFINIBAND=
 				CONFIG_MLX5_DEBUG=
-				CONFIG_MLX5_ESWITCH=
 				;;
 			--with-mlx4_en-mod)
 				CONFIG_MLX4_CORE="m"
