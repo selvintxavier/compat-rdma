@@ -789,6 +789,7 @@ main()
 				CONFIG_QED_RDMA="m"
 				CONFIG_QEDE="m"
 				CONFIG_INFINIBAND_QEDR="m"
+				CONFIG_QED_OOO="m"
 				;;
 			--without-qedr-mod)
 				CONFIG_QED=
@@ -796,6 +797,7 @@ main()
 				CONFIG_QED_RDMA=
 				CONFIG_QEDE=
 				CONFIG_INFINIBAND_QEDR=
+				CONFIG_QED_OOO=
 				;;
 			--with-nvme-mod)
 				CONFIG_NVME_CORE="m"
