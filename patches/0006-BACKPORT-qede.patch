@@ -1,0 +1,158 @@
+diff --git a/drivers/net/ethernet/qlogic/qede/qede.h b/drivers/net/ethernet/qlogic/qede/qede.h
+index 9935978..e70c96a 100644
+--- a/drivers/net/ethernet/qlogic/qede/qede.h
++++ b/drivers/net/ethernet/qlogic/qede/qede.h
+@@ -40,7 +40,9 @@
+ #include <linux/kernel.h>
+ #include <linux/mutex.h>
+ #include <linux/bpf.h>
++#ifdef HAVE_NET_XDP_H
+ #include <net/xdp.h>
++#endif
+ #include <linux/qed/qede_rdma.h>
+ #include <linux/io.h>
+ #ifdef CONFIG_RFS_ACCEL
+@@ -63,6 +65,13 @@
+ 
+ #define DRV_MODULE_SYM		qede
+ 
++#ifndef HAVE_XDP_SET_DATA_META_INVALID
++#define xdp_set_data_meta_invalid(xdp)
++#endif
++#ifndef NETIF_F_GRO_HW
++#define NETIF_F_GRO_HW 0x100000000
++#endif
++
+ struct qede_stats_common {
+ 	u64 no_buff_discards;
+ 	u64 packet_too_big_discard;
+@@ -346,7 +355,9 @@ struct qede_rx_queue {
+ 	u64 xdp_no_pass;
+ 
+ 	void *handle;
++#ifdef HAVE_XDP_RXQ_INFO
+ 	struct xdp_rxq_info xdp_rxq;
++#endif
+ };
+ 
+ union db_prod {
+diff --git a/drivers/net/ethernet/qlogic/qede/qede_fp.c b/drivers/net/ethernet/qlogic/qede/qede_fp.c
+index 1494130..f612559 100644
+--- a/drivers/net/ethernet/qlogic/qede/qede_fp.c
++++ b/drivers/net/ethernet/qlogic/qede/qede_fp.c
+@@ -1004,7 +1004,10 @@ static bool qede_rx_xdp(struct qede_dev *edev,
+ 	xdp.data = xdp.data_hard_start + *data_offset;
+ 	xdp_set_data_meta_invalid(&xdp);
+ 	xdp.data_end = xdp.data + *len;
++
++	#ifdef HAVE_XDP_RXQ_INFO
+ 	xdp.rxq = &rxq->xdp_rxq;
++	#endif
+ 
+ 	/* Queues always have a full reset currently, so for the time
+ 	 * being until there's atomic program replace just mark read
+diff --git a/drivers/net/ethernet/qlogic/qede/qede_main.c b/drivers/net/ethernet/qlogic/qede/qede_main.c
+index f6655e2..fcf3edc 100644
+--- a/drivers/net/ethernet/qlogic/qede/qede_main.c
++++ b/drivers/net/ethernet/qlogic/qede/qede_main.c
+@@ -536,7 +536,9 @@ static const struct net_device_ops qede_netdev_ops = {
+ 	.ndo_set_rx_mode = qede_set_rx_mode,
+ 	.ndo_set_mac_address = qede_set_mac_addr,
+ 	.ndo_validate_addr = eth_validate_addr,
++#ifdef HAVE_NDO_CHANGE_MTU
+ 	.ndo_change_mtu = qede_change_mtu,
++#endif
+ 	.ndo_do_ioctl = qede_ioctl,
+ #ifdef CONFIG_QED_SRIOV
+ 	.ndo_set_vf_mac = qede_set_vf_mac,
+@@ -554,10 +556,14 @@ static const struct net_device_ops qede_netdev_ops = {
+ 	.ndo_get_vf_config = qede_get_vf_config,
+ 	.ndo_set_vf_rate = qede_set_vf_rate,
+ #endif
++#ifdef HAVE_NDO_UDP_TUNNEL
+ 	.ndo_udp_tunnel_add = qede_udp_tunnel_add,
+ 	.ndo_udp_tunnel_del = qede_udp_tunnel_del,
++#endif
+ 	.ndo_features_check = qede_features_check,
++#ifdef HAVE_NDO_XDP
+ 	.ndo_bpf = qede_xdp,
++#endif
+ #ifdef CONFIG_RFS_ACCEL
+ 	.ndo_rx_flow_steer = qede_rx_flow_steer,
+ #endif
+@@ -570,14 +576,18 @@ static const struct net_device_ops qede_netdev_vf_ops = {
+ 	.ndo_set_rx_mode = qede_set_rx_mode,
+ 	.ndo_set_mac_address = qede_set_mac_addr,
+ 	.ndo_validate_addr = eth_validate_addr,
++#ifdef HAVE_NDO_CHANGE_MTU
+ 	.ndo_change_mtu = qede_change_mtu,
++#endif
+ 	.ndo_vlan_rx_add_vid = qede_vlan_rx_add_vid,
+ 	.ndo_vlan_rx_kill_vid = qede_vlan_rx_kill_vid,
+ 	.ndo_fix_features = qede_fix_features,
+ 	.ndo_set_features = qede_set_features,
+ 	.ndo_get_stats64 = qede_get_stats64,
++#ifdef HAVE_NDO_UDP_TUNNEL
+ 	.ndo_udp_tunnel_add = qede_udp_tunnel_add,
+ 	.ndo_udp_tunnel_del = qede_udp_tunnel_del,
++#endif
+ 	.ndo_features_check = qede_features_check,
+ };
+ 
+@@ -588,16 +598,22 @@ static const struct net_device_ops qede_netdev_vf_xdp_ops = {
+ 	.ndo_set_rx_mode = qede_set_rx_mode,
+ 	.ndo_set_mac_address = qede_set_mac_addr,
+ 	.ndo_validate_addr = eth_validate_addr,
++#ifdef HAVE_NDO_CHANGE_MTU
+ 	.ndo_change_mtu = qede_change_mtu,
++#endif
+ 	.ndo_vlan_rx_add_vid = qede_vlan_rx_add_vid,
+ 	.ndo_vlan_rx_kill_vid = qede_vlan_rx_kill_vid,
+ 	.ndo_fix_features = qede_fix_features,
+ 	.ndo_set_features = qede_set_features,
+ 	.ndo_get_stats64 = qede_get_stats64,
++#ifdef HAVE_NDO_UDP_TUNNEL
+ 	.ndo_udp_tunnel_add = qede_udp_tunnel_add,
+ 	.ndo_udp_tunnel_del = qede_udp_tunnel_del,
++#endif
+ 	.ndo_features_check = qede_features_check,
++#ifdef HAVE_NDO_XDP
+ 	.ndo_bpf = qede_xdp,
++#endif
+ };
+ 
+ /* -------------------------------------------------------------------------
+@@ -720,9 +736,10 @@ static void qede_init_ndev(struct qede_dev *edev)
+ 	ndev->hw_features = hw_features;
+ 
+ 	/* MTU range: 46 - 9600 */
++#ifdef HAVE_NET_DEVICE_MAX_MTU
+ 	ndev->min_mtu = ETH_ZLEN - ETH_HLEN;
+ 	ndev->max_mtu = QEDE_MAX_JUMBO_PACKET_SIZE;
+-
++#endif
+ 	/* Set network device HW mac */
+ 	ether_addr_copy(edev->ndev->dev_addr, edev->dev_info.common.hw_mac);
+ 
+@@ -769,8 +786,10 @@ static void qede_free_fp_array(struct qede_dev *edev)
+ 			 * didn't register xdp_rxq_info yet.
+ 			 * Implicit only (fp->type & QEDE_FASTPATH_RX)
+ 			 */
++			#ifdef HAVE_XDP_RXQ_INFO
+ 			if (fp->rxq && xdp_rxq_info_is_reg(&fp->rxq->xdp_rxq))
+ 				xdp_rxq_info_unreg(&fp->rxq->xdp_rxq);
++			#endif
+ 			kfree(fp->rxq);
+ 			kfree(fp->xdp_tx);
+ 			kfree(fp->txq);
+@@ -1500,8 +1519,10 @@ static void qede_init_fp(struct qede_dev *edev)
+ 			fp->rxq->dev = &edev->pdev->dev;
+ 
+ 			/* Driver have no error path from here */
++			#ifdef HAVE_XDP_RXQ_INFO
+ 			WARN_ON(xdp_rxq_info_reg(&fp->rxq->xdp_rxq, edev->ndev,
+ 						 fp->rxq->rxq_id) < 0);
++			#endif
+ 		}
+ 
+ 		if (fp->type & QEDE_FASTPATH_TX) {
