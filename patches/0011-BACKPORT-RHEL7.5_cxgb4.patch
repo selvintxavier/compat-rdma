@@ -1,0 +1,456 @@
+From 0315684a80eae88d8612e6a18e5b19a08210d3e6 Mon Sep 17 00:00:00 2001
+From: Arjun Vynipadath <arjun@chelsio.com>
+Date: Mon, 25 Jun 2018 10:00:05 +0530
+Subject: [PATCH] cxgb4: Compilation fixes for RHEL7.5
+
+ - Check for new timer settings API, else use the old timer API
+ - Check if rhashtable.h is present in include path, if yes include it
+ - Check if string_get_size() has extra parameter
+ - Check if ethtool_drvinfo struct has erom_version member, else use reserved member
+ - Handle pr_fmt redefintion warnings
+ - Check if debugfs_create_bool uses bool pointers, else use u32 pointers
+ - Check if net/pkt_cls.h has tc_cls_can_offload_and_chain0
+ - Check if struct tc_block_offload exists
+ - Check if new API for ndo_change_mtu is present in extended netdevice struct
+ - Check if ndo_set_tx_maxrate is present in extended netdevice struct
+ - Check if ndo_setup_tc is present in extended netdevice struct
+ - Check if ndo_udp_tunnel_{add/del} is present in extended netdevice struct
+ - Check if ndo_set_vf_vlan is present in extended netdevice struct
+ - Check if alloc_netdev() has extra parameter
+ - Check if is_tcf_gact_ok() is present
+ - Check if tcf_mirred_dev() is present
+ - Fix Makefile include paths
+---
+ drivers/net/ethernet/chelsio/cxgb4/cxgb4.h         | 13 ++++-
+ drivers/net/ethernet/chelsio/cxgb4/cxgb4_debugfs.c |  5 +-
+ drivers/net/ethernet/chelsio/cxgb4/cxgb4_ethtool.c |  4 ++
+ drivers/net/ethernet/chelsio/cxgb4/cxgb4_main.c    | 65 +++++++++++++++++++++-
+ .../net/ethernet/chelsio/cxgb4/cxgb4_tc_flower.c   | 38 +++++++++++++
+ drivers/net/ethernet/chelsio/cxgb4/cxgb4_tc_u32.c  | 15 ++++-
+ drivers/net/ethernet/chelsio/cxgb4/sge.c           | 21 +++++++
+ 7 files changed, 157 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/net/ethernet/chelsio/cxgb4/cxgb4.h b/drivers/net/ethernet/chelsio/cxgb4/cxgb4.h
+index 688f954..63b2861 100644
+--- a/drivers/net/ethernet/chelsio/cxgb4/cxgb4.h
++++ b/drivers/net/ethernet/chelsio/cxgb4/cxgb4.h
+@@ -53,6 +53,9 @@
+ #include <asm/io.h>
+ #include "t4_chip_type.h"
+ #include "cxgb4_uld.h"
++#ifdef HAVE_LINUX_RHASHTABLE_H
++#include <linux/rhashtable.h>
++#endif
+ 
+ #define CH_WARN(adap, fmt, ...) dev_warn(adap->pdev_dev, fmt, ## __VA_ARGS__)
+ extern struct list_head adapter_list;
+@@ -933,11 +936,19 @@ struct adapter {
+ 	struct mutex uld_mutex;
+ 
+ 	struct dentry *debugfs_root;
++#ifdef HAVE_DEBUGFS_CREATE_BOOL_USES_BOOL_PTR
+ 	bool use_bd;     /* Use SGE Back Door intfc for reading SGE Contexts */
+-	bool trace_rss;	/* 1 implies that different RSS flit per filter is
++	bool trace_rss;	 /* 1 implies that different RSS flit per filter is
+ 			 * used per filter else if 0 default RSS flit is
+ 			 * used for all 4 filters.
+ 			 */
++#else
++	u32 use_bd;     /* Use SGE Back Door intfc for reading SGE Contexts */
++	u32 trace_rss;  /* 1 implies that different RSS flit per filter is
++			 * used per filter else if 0 default RSS flit is
++			 * used for all 4 filters.
++			 */
++#endif
+ 
+ 	struct ptp_clock *ptp_clock;
+ 	struct ptp_clock_info ptp_clock_info;
+diff --git a/drivers/net/ethernet/chelsio/cxgb4/cxgb4_debugfs.c b/drivers/net/ethernet/chelsio/cxgb4/cxgb4_debugfs.c
+index 251d5bd..de55fec 100644
+--- a/drivers/net/ethernet/chelsio/cxgb4/cxgb4_debugfs.c
++++ b/drivers/net/ethernet/chelsio/cxgb4/cxgb4_debugfs.c
+@@ -2810,8 +2810,11 @@ static void mem_region_show(struct seq_file *seq, const char *name,
+ 			    unsigned int from, unsigned int to)
+ {
+ 	char buf[40];
+-
++#ifdef HAVE_STRING_GET_SIZE_5_PARAMS
+ 	string_get_size((u64)to - from + 1, 1, STRING_UNITS_2, buf,
++#else
++	string_get_size((u64)to - from + 1, STRING_UNITS_2, buf,
++#endif
+ 			sizeof(buf));
+ 	seq_printf(seq, "%-15s %#x-%#x [%s]\n", name, from, to, buf);
+ }
+diff --git a/drivers/net/ethernet/chelsio/cxgb4/cxgb4_ethtool.c b/drivers/net/ethernet/chelsio/cxgb4/cxgb4_ethtool.c
+index 59d04d7..51e43b8 100644
+--- a/drivers/net/ethernet/chelsio/cxgb4/cxgb4_ethtool.c
++++ b/drivers/net/ethernet/chelsio/cxgb4/cxgb4_ethtool.c
+@@ -229,7 +229,11 @@ static void get_drvinfo(struct net_device *dev, struct ethtool_drvinfo *info)
+ 			 FW_HDR_FW_VER_BUILD_G(adapter->params.tp_vers));
+ 
+ 	if (!t4_get_exprom_version(adapter, &exprom_vers))
++#ifdef HAVE_ETHTOOL_DRVINFO_EROM_VERSION
+ 		snprintf(info->erom_version, sizeof(info->erom_version),
++#else
++		snprintf(info->reserved1, sizeof(info->reserved1),
++#endif
+ 			 "%u.%u.%u.%u",
+ 			 FW_HDR_FW_VER_MAJOR_G(exprom_vers),
+ 			 FW_HDR_FW_VER_MINOR_G(exprom_vers),
+diff --git a/drivers/net/ethernet/chelsio/cxgb4/cxgb4_main.c b/drivers/net/ethernet/chelsio/cxgb4/cxgb4_main.c
+index 005283c..8520a0c 100644
+--- a/drivers/net/ethernet/chelsio/cxgb4/cxgb4_main.c
++++ b/drivers/net/ethernet/chelsio/cxgb4/cxgb4_main.c
+@@ -31,6 +31,9 @@
+  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  * SOFTWARE.
+  */
++#ifdef pr_fmt
++#undef pr_fmt
++#endif
+ 
+ #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+ 
+@@ -2946,6 +2949,15 @@ static int cxgb_set_tx_maxrate(struct net_device *dev, int index, u32 rate)
+ static int cxgb_setup_tc_flower(struct net_device *dev,
+ 				struct tc_cls_flower_offload *cls_flower)
+ {
++#ifndef HAVE_TC_CLS_CAN_OFFLOAD_AND_CHAIN0
++#ifdef HAVE_TC_BLOCK_OFFLOAD
++	if (cls_flower->common.chain_index)
++#else
++	if (!is_classid_clsact_ingress(cls_flower->common.classid) ||
++	    cls_flower->common.chain_index)
++#endif
++		return -EOPNOTSUPP;
++#endif
+ 	switch (cls_flower->command) {
+ 	case TC_CLSFLOWER_REPLACE:
+ 		return cxgb4_tc_flower_replace(dev, cls_flower);
+@@ -2961,6 +2973,15 @@ static int cxgb_setup_tc_flower(struct net_device *dev,
+ static int cxgb_setup_tc_cls_u32(struct net_device *dev,
+ 				 struct tc_cls_u32_offload *cls_u32)
+ {
++#ifndef HAVE_TC_CLS_CAN_OFFLOAD_AND_CHAIN0
++#ifdef HAVE_TC_BLOCK_OFFLOAD
++	if (cls_u32->common.chain_index)
++#else
++	if (!is_classid_clsact_ingress(cls_u32->common.classid) ||
++	    cls_u32->common.chain_index)
++#endif
++		return -EOPNOTSUPP;
++#endif
+ 	switch (cls_u32->command) {
+ 	case TC_CLSU32_NEW_KNODE:
+ 	case TC_CLSU32_REPLACE_KNODE:
+@@ -2972,10 +2993,16 @@ static int cxgb_setup_tc_cls_u32(struct net_device *dev,
+ 	}
+ }
+ 
++#ifdef HAVE_TC_BLOCK_OFFLOAD
+ static int cxgb_setup_tc_block_cb(enum tc_setup_type type, void *type_data,
+ 				  void *cb_priv)
+ {
+ 	struct net_device *dev = cb_priv;
++#else
++static int cxgb_setup_tc(struct net_device *dev, enum tc_setup_type type,
++			 void *type_data)
++{
++#endif
+ 	struct port_info *pi = netdev2pinfo(dev);
+ 	struct adapter *adap = netdev2adap(dev);
+ 
+@@ -2986,8 +3013,10 @@ static int cxgb_setup_tc_block_cb(enum tc_setup_type type, void *type_data,
+ 		return -EINVAL;
+ 	}
+ 
++#ifdef HAVE_TC_CLS_CAN_OFFLOAD_AND_CHAIN0
+ 	if (!tc_cls_can_offload_and_chain0(dev, type_data))
+ 		return -EOPNOTSUPP;
++#endif
+ 
+ 	switch (type) {
+ 	case TC_SETUP_CLSU32:
+@@ -2999,6 +3028,7 @@ static int cxgb_setup_tc_block_cb(enum tc_setup_type type, void *type_data,
+ 	}
+ }
+ 
++#ifdef HAVE_TC_BLOCK_OFFLOAD
+ static int cxgb_setup_tc_block(struct net_device *dev,
+ 			       struct tc_block_offload *f)
+ {
+@@ -3029,6 +3059,7 @@ static int cxgb_setup_tc(struct net_device *dev, enum tc_setup_type type,
+ 		return -EOPNOTSUPP;
+ 	}
+ }
++#endif
+ 
+ static void cxgb_del_udp_tunnel(struct net_device *netdev,
+ 				struct udp_tunnel_info *ti)
+@@ -3219,7 +3250,11 @@ static const struct net_device_ops cxgb4_netdev_ops = {
+ 	.ndo_set_features     = cxgb_set_features,
+ 	.ndo_validate_addr    = eth_validate_addr,
+ 	.ndo_do_ioctl         = cxgb_ioctl,
++#ifdef HAVE_NDO_CHANGE_MTU_EXTENDED
++	.extended.ndo_change_mtu = cxgb_change_mtu,
++#else
+ 	.ndo_change_mtu       = cxgb_change_mtu,
++#endif
+ #ifdef CONFIG_NET_POLL_CONTROLLER
+ 	.ndo_poll_controller  = cxgb_netpoll,
+ #endif
+@@ -3227,10 +3262,23 @@ static const struct net_device_ops cxgb4_netdev_ops = {
+ 	.ndo_fcoe_enable      = cxgb_fcoe_enable,
+ 	.ndo_fcoe_disable     = cxgb_fcoe_disable,
+ #endif /* CONFIG_CHELSIO_T4_FCOE */
+-	.ndo_set_tx_maxrate   = cxgb_set_tx_maxrate,
++#ifdef HAVE_NDO_SET_TX_MAXRATE_EXTENDED
++	.extended.ndo_set_tx_maxrate   = cxgb_set_tx_maxrate,
++#else
++	.ndo_set_tx_maxrate = cxgb_set_tx_maxrate,
++#endif
++#ifdef HAVE_NDO_SETUP_TC_RH_EXTENDED
++	.extended.ndo_setup_tc_rh	= cxgb_setup_tc,
++#else
+ 	.ndo_setup_tc         = cxgb_setup_tc,
++#endif
++#ifdef HAVE_NDO_UDP_TUNNEL_ADD_EXTENDED
++	.extended.ndo_udp_tunnel_add   = cxgb_add_udp_tunnel,
++	.extended.ndo_udp_tunnel_del   = cxgb_del_udp_tunnel,
++#else
+ 	.ndo_udp_tunnel_add   = cxgb_add_udp_tunnel,
+ 	.ndo_udp_tunnel_del   = cxgb_del_udp_tunnel,
++#endif
+ 	.ndo_features_check   = cxgb_features_check,
+ 	.ndo_fix_features     = cxgb_fix_features,
+ };
+@@ -3242,7 +3290,11 @@ static const struct net_device_ops cxgb4_mgmt_netdev_ops = {
+ 	.ndo_get_vf_config    = cxgb4_mgmt_get_vf_config,
+ 	.ndo_set_vf_rate      = cxgb4_mgmt_set_vf_rate,
+ 	.ndo_get_phys_port_id = cxgb4_mgmt_get_phys_port_id,
++#ifdef HAVE_NDO_SET_VF_VLAN_EXTENDED
++	.extended.ndo_set_vf_vlan      = cxgb4_mgmt_set_vf_vlan,
++#else
+ 	.ndo_set_vf_vlan      = cxgb4_mgmt_set_vf_vlan,
++#endif
+ };
+ #endif
+ 
+@@ -5353,8 +5405,14 @@ static int cxgb4_iov_configure(struct pci_dev *pdev, int num_vfs)
+ 		/* Allocate VF Management Interface. */
+ 		snprintf(name, IFNAMSIZ, "mgmtpf%d,%d", adap->adap_idx,
+ 			 adap->pf);
++#ifdef HAVE_ALLOC_NETDEV_4P
+ 		netdev = alloc_netdev(sizeof(struct port_info),
+ 				      name, NET_NAME_UNKNOWN, cxgb4_mgmt_setup);
++#else
++		netdev = alloc_netdev(sizeof(struct port_info),
++				      name, cxgb4_mgmt_setup);
++#endif
++
+ 		if (!netdev)
+ 			return -ENOMEM;
+ 
+@@ -5621,8 +5679,13 @@ static int init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
+ 		netdev->priv_flags |= IFF_UNICAST_FLT;
+ 
+ 		/* MTU range: 81 - 9600 */
++#ifdef HAVE_NDO_CHANGE_MTU_EXTENDED
++		netdev->extended->min_mtu = 81;
++		netdev->extended->max_mtu = MAX_MTU;
++#else
+ 		netdev->min_mtu = 81;              /* accommodate SACK */
+ 		netdev->max_mtu = MAX_MTU;
++#endif
+ 
+ 		netdev->netdev_ops = &cxgb4_netdev_ops;
+ #ifdef CONFIG_CHELSIO_T4_DCB
+diff --git a/drivers/net/ethernet/chelsio/cxgb4/cxgb4_tc_flower.c b/drivers/net/ethernet/chelsio/cxgb4/cxgb4_tc_flower.c
+index 3656336..45705a5 100644
+--- a/drivers/net/ethernet/chelsio/cxgb4/cxgb4_tc_flower.c
++++ b/drivers/net/ethernet/chelsio/cxgb4/cxgb4_tc_flower.c
+@@ -403,12 +403,22 @@ static void cxgb4_process_flow_actions(struct net_device *in,
+ 
+ 	tcf_exts_to_list(cls->exts, &actions);
+ 	list_for_each_entry(a, &actions, list) {
++#ifdef HAVE_TCF_GACT_OK
+ 		if (is_tcf_gact_ok(a)) {
++#else
++		if (__is_tcf_gact_act(a, TC_ACT_OK, false)) {
++#endif
+ 			fs->action = FILTER_PASS;
+ 		} else if (is_tcf_gact_shot(a)) {
+ 			fs->action = FILTER_DROP;
+ 		} else if (is_tcf_mirred_egress_redirect(a)) {
++#ifdef HAVE_TCF_MIRRED_DEV
+ 			struct net_device *out = tcf_mirred_dev(a);
++#else
++			int ifindex = tcf_mirred_ifindex(a);
++			struct net_device *out = __dev_get_by_index(dev_net(in),
++								    ifindex);
++#endif
+ 			struct port_info *pi = netdev_priv(out);
+ 
+ 			fs->action = FILTER_SWITCH;
+@@ -577,20 +587,37 @@ static int cxgb4_validate_flow_actions(struct net_device *dev,
+ 
+ 	tcf_exts_to_list(cls->exts, &actions);
+ 	list_for_each_entry(a, &actions, list) {
++#ifdef HAVE_TCF_GACT_OK
+ 		if (is_tcf_gact_ok(a)) {
++#else
++		if (__is_tcf_gact_act(a, TC_ACT_OK, false)) {
++#endif
+ 			/* Do nothing */
+ 		} else if (is_tcf_gact_shot(a)) {
+ 			/* Do nothing */
+ 		} else if (is_tcf_mirred_egress_redirect(a)) {
+ 			struct adapter *adap = netdev2adap(dev);
++#ifdef HAVE_TCF_MIRRED_DEV
+ 			struct net_device *n_dev, *target_dev;
+ 			unsigned int i;
++#else
++			struct net_device *n_dev;
++			unsigned int i, ifindex;
++#endif
+ 			bool found = false;
+ 
++#ifdef HAVE_TCF_MIRRED_DEV
+ 			target_dev = tcf_mirred_dev(a);
++#else
++			ifindex = tcf_mirred_ifindex(a);
++#endif
+ 			for_each_port(adap, i) {
+ 				n_dev = adap->port[i];
++#ifdef HAVE_TCF_MIRRED_DEV
+ 				if (target_dev == n_dev) {
++#else
++				if (ifindex == n_dev->ifindex) {
++#endif
+ 					found = true;
+ 					break;
+ 				}
+@@ -793,9 +820,15 @@ static void ch_flower_stats_handler(struct work_struct *work)
+ 	mod_timer(&adap->flower_stats_timer, jiffies + STATS_CHECK_PERIOD);
+ }
+ 
++#ifdef HAVE_TIMER_SETUP
+ static void ch_flower_stats_cb(struct timer_list *t)
+ {
+ 	struct adapter *adap = from_timer(adap, t, flower_stats_timer);
++#else
++static void ch_flower_stats_cb(unsigned long data)
++{
++	struct adapter *adap = (struct adapter *)data;
++#endif
+ 
+ 	schedule_work(&adap->flower_stats_work);
+ }
+@@ -862,7 +895,12 @@ int cxgb4_init_tc_flower(struct adapter *adap)
+ 		return ret;
+ 
+ 	INIT_WORK(&adap->flower_stats_work, ch_flower_stats_handler);
++#ifdef HAVE_TIMER_SETUP
+ 	timer_setup(&adap->flower_stats_timer, ch_flower_stats_cb, 0);
++#else
++	setup_timer(&adap->flower_stats_timer, ch_flower_stats_cb,
++		    (unsigned long)adap);
++#endif
+ 	mod_timer(&adap->flower_stats_timer, jiffies + STATS_CHECK_PERIOD);
+ 	return 0;
+ }
+diff --git a/drivers/net/ethernet/chelsio/cxgb4/cxgb4_tc_u32.c b/drivers/net/ethernet/chelsio/cxgb4/cxgb4_tc_u32.c
+index ab174bc..973881b 100644
+--- a/drivers/net/ethernet/chelsio/cxgb4/cxgb4_tc_u32.c
++++ b/drivers/net/ethernet/chelsio/cxgb4/cxgb4_tc_u32.c
+@@ -114,14 +114,27 @@ static int fill_action_fields(struct adapter *adap,
+ 
+ 		/* Re-direct to specified port in hardware. */
+ 		if (is_tcf_mirred_egress_redirect(a)) {
++#ifdef HAVE_TCF_MIRRED_DEV
+ 			struct net_device *n_dev, *target_dev;
+-			bool found = false;
+ 			unsigned int i;
++#else
++			struct net_device *n_dev;
++			unsigned int i, index;
++#endif
++			bool found = false;
+ 
++#ifdef HAVE_TCF_MIRRED_DEV
+ 			target_dev = tcf_mirred_dev(a);
++#else
++			index = tcf_mirred_ifindex(a);
++#endif
+ 			for_each_port(adap, i) {
+ 				n_dev = adap->port[i];
++#ifdef HAVE_TCF_MIRRED_DEV
+ 				if (target_dev == n_dev) {
++#else
++				if (index == n_dev->ifindex) {
++#endif
+ 					fs->action = FILTER_SWITCH;
+ 					fs->eport = i;
+ 					found = true;
+diff --git a/drivers/net/ethernet/chelsio/cxgb4/sge.c b/drivers/net/ethernet/chelsio/cxgb4/sge.c
+index 1a28df1..c7d6069 100644
+--- a/drivers/net/ethernet/chelsio/cxgb4/sge.c
++++ b/drivers/net/ethernet/chelsio/cxgb4/sge.c
+@@ -2831,11 +2831,19 @@ irq_handler_t t4_intr_handler(struct adapter *adap)
+ 	return t4_intr_intx;
+ }
+ 
++#ifdef HAVE_TIMER_SETUP
+ static void sge_rx_timer_cb(struct timer_list *t)
++#else
++static void sge_rx_timer_cb(unsigned long data)
++#endif
+ {
+ 	unsigned long m;
+ 	unsigned int i;
++#ifdef HAVE_TIMER_SETUP
+ 	struct adapter *adap = from_timer(adap, t, sge.rx_timer);
++#else
++	struct adapter *adap = (struct adapter *)data;
++#endif
+ 	struct sge *s = &adap->sge;
+ 
+ 	for (i = 0; i < BITS_TO_LONGS(s->egr_sz); i++)
+@@ -2868,11 +2876,19 @@ done:
+ 	mod_timer(&s->rx_timer, jiffies + RX_QCHECK_PERIOD);
+ }
+ 
++#ifdef HAVE_TIMER_SETUP
+ static void sge_tx_timer_cb(struct timer_list *t)
++#else
++static void sge_tx_timer_cb(unsigned long data)
++#endif
+ {
+ 	unsigned long m;
+ 	unsigned int i, budget;
++#ifdef HAVE_TIMER_SETUP
+ 	struct adapter *adap = from_timer(adap, t, sge.tx_timer);
++#else
++	struct adapter *adap = (struct adapter *)data;
++#endif
+ 	struct sge *s = &adap->sge;
+ 
+ 	for (i = 0; i < BITS_TO_LONGS(s->egr_sz); i++)
+@@ -3706,8 +3722,13 @@ int t4_sge_init(struct adapter *adap)
+ 	/* Set up timers used for recuring callbacks to process RX and TX
+ 	 * administrative tasks.
+ 	 */
++#ifdef HAVE_TIMER_SETUP
+ 	timer_setup(&s->rx_timer, sge_rx_timer_cb, 0);
+ 	timer_setup(&s->tx_timer, sge_tx_timer_cb, 0);
++#else
++	setup_timer(&s->rx_timer, sge_rx_timer_cb, (unsigned long)adap);
++	setup_timer(&s->tx_timer, sge_tx_timer_cb, (unsigned long)adap);
++#endif
+ 
+ 	spin_lock_init(&s->intrq_lock);
+ 
+-- 
+1.8.3.1
+
