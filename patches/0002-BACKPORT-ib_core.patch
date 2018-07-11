@@ -14,7 +14,7 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  drivers/infiniband/core/netlink.c       |  29 +++++++
  drivers/infiniband/core/nldev.c         |  25 ++++++
  drivers/infiniband/core/restrack.c      |   4 +
- drivers/infiniband/core/roce_gid_mgmt.c |  31 +++++++
+ drivers/infiniband/core/roce_gid_mgmt.c |  35 ++++++++
  drivers/infiniband/core/sa_query.c      |  47 ++++++++++
  drivers/infiniband/core/ucm.c           |  16 ++++
  drivers/infiniband/core/ucma.c          |  15 ++++
@@ -26,7 +26,7 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  include/rdma/ib_verbs.h                 | 147 ++++++++++++++++++++++++++++++++
  include/rdma/rdma_netlink.h             |   4 +
  include/rdma/restrack.h                 |   2 +
- 23 files changed, 689 insertions(+), 1 deletion(-)
+ 23 files changed, 693 insertions(+), 1 deletion(-)
 
 diff --git a/drivers/infiniband/core/addr.c b/drivers/infiniband/core/addr.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -925,6 +925,18 @@ index xxxxxxx..xxxxxxx xxxxxx
  		break;
  
  	default:
+@@ -763,7 +794,11 @@ int __init roce_gid_mgmt_init(void)
+ 	 * last to make sure we will not miss any IP add/del
+ 	 * callbacks.
+ 	 */
++#ifdef HAVE_REGISTER_NETDEVICE_NOTIFIER_RH
++	register_netdevice_notifier_rh(&nb_netdevice);
++#else
+ 	register_netdevice_notifier(&nb_netdevice);
++#endif
+ 
+ 	return 0;
+ }
 diff --git a/drivers/infiniband/core/sa_query.c b/drivers/infiniband/core/sa_query.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/sa_query.c
