@@ -1,0 +1,125 @@
+From 5f5fe868e81b214ce63bfae53e7a2c0a262e29ba Mon Sep 17 00:00:00 2001
+From: Arjun Vynipadath <arjun@chelsio.com>
+Date: Mon, 25 Jun 2018 09:59:11 +0530
+Subject: [PATCH] cxgb3: Compilation checks for RHEL7.5
+
+ - Check for new timer settings API, else use the old timer API
+ - Check for new extended MTU API, else revert back to the old ndo_change_mtu
+ - Handle pr_fmt  redefintion warnings
+---
+ drivers/net/ethernet/chelsio/cxgb3/cxgb3_main.c    | 13 +++++++++++++
+ drivers/net/ethernet/chelsio/cxgb3/cxgb3_offload.c |  4 ++++
+ drivers/net/ethernet/chelsio/cxgb3/sge.c           | 19 ++++++++++++++++++-
+ 3 files changed, 35 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/chelsio/cxgb3/cxgb3_main.c b/drivers/net/ethernet/chelsio/cxgb3/cxgb3_main.c
+index 2edfdbd..a875795 100644
+--- a/drivers/net/ethernet/chelsio/cxgb3/cxgb3_main.c
++++ b/drivers/net/ethernet/chelsio/cxgb3/cxgb3_main.c
+@@ -30,6 +30,10 @@
+  * SOFTWARE.
+  */
+ 
++#ifdef pr_fmt
++#undef pr_fmt
++#endif
++
+ #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+ 
+ #include <linux/module.h>
+@@ -3162,7 +3166,11 @@ static const struct net_device_ops cxgb_netdev_ops = {
+ 	.ndo_validate_addr	= eth_validate_addr,
+ 	.ndo_set_rx_mode	= cxgb_set_rxmode,
+ 	.ndo_do_ioctl		= cxgb_ioctl,
++#ifdef HAVE_NDO_CHANGE_MTU_EXTENDED
++	.extended.ndo_change_mtu = cxgb_change_mtu,
++#else
+ 	.ndo_change_mtu		= cxgb_change_mtu,
++#endif
+ 	.ndo_set_mac_address	= cxgb_set_mac_addr,
+ 	.ndo_fix_features	= cxgb_fix_features,
+ 	.ndo_set_features	= cxgb_set_features,
+@@ -3302,8 +3310,13 @@ static int init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
+ 
+ 		netdev->netdev_ops = &cxgb_netdev_ops;
+ 		netdev->ethtool_ops = &cxgb_ethtool_ops;
++#ifdef HAVE_NDO_CHANGE_MTU_EXTENDED
++		netdev->extended->min_mtu = 81;
++		netdev->extended->max_mtu = ETH_MAX_MTU;
++#else
+ 		netdev->min_mtu = 81;
+ 		netdev->max_mtu = ETH_MAX_MTU;
++#endif
+ 		netdev->dev_port = pi->port_id;
+ 	}
+ 
+diff --git a/drivers/net/ethernet/chelsio/cxgb3/cxgb3_offload.c b/drivers/net/ethernet/chelsio/cxgb3/cxgb3_offload.c
+index 50cd660..d4945d2 100644
+--- a/drivers/net/ethernet/chelsio/cxgb3/cxgb3_offload.c
++++ b/drivers/net/ethernet/chelsio/cxgb3/cxgb3_offload.c
+@@ -30,6 +30,10 @@
+  * SOFTWARE.
+  */
+ 
++#ifdef pr_fmt
++#undef pr_fmt
++#endif
++
+ #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+ 
+ #include <linux/list.h>
+diff --git a/drivers/net/ethernet/chelsio/cxgb3/sge.c b/drivers/net/ethernet/chelsio/cxgb3/sge.c
+index e988caa..be5ba39 100644
+--- a/drivers/net/ethernet/chelsio/cxgb3/sge.c
++++ b/drivers/net/ethernet/chelsio/cxgb3/sge.c
+@@ -2919,9 +2919,15 @@ void t3_sge_err_intr_handler(struct adapter *adapter)
+  *	bother cleaning them up here.
+  *
+  */
++#ifdef HAVE_TIMER_SETUP
+ static void sge_timer_tx(struct timer_list *t)
+ {
+ 	struct sge_qset *qs = from_timer(qs, t, tx_reclaim_timer);
++#else
++static void sge_timer_tx(unsigned long data)
++{
++	struct sge_qset *qs = (struct sge_qset *)data;
++#endif
+ 	struct port_info *pi = netdev_priv(qs->netdev);
+ 	struct adapter *adap = pi->adapter;
+ 	unsigned int tbd[SGE_TXQ_PER_SET] = {0, 0};
+@@ -2959,10 +2965,16 @@ static void sge_timer_tx(struct timer_list *t)
+  *	starved.
+  *
+  */
++#ifdef HAVE_TIMER_SETUP
+ static void sge_timer_rx(struct timer_list *t)
+ {
+-	spinlock_t *lock;
+ 	struct sge_qset *qs = from_timer(qs, t, rx_reclaim_timer);
++#else
++static void sge_timer_rx(unsigned long data)
++{
++	struct sge_qset *qs = (struct sge_qset *)data;
++#endif
++	spinlock_t *lock;
+ 	struct port_info *pi = netdev_priv(qs->netdev);
+ 	struct adapter *adap = pi->adapter;
+ 	u32 status;
+@@ -3042,8 +3054,13 @@ int t3_sge_alloc_qset(struct adapter *adapter, unsigned int id, int nports,
+ 	struct sge_qset *q = &adapter->sge.qs[id];
+ 
+ 	init_qset_cntxt(q, id);
++#ifdef HAVE_TIMER_SETUP
+ 	timer_setup(&q->tx_reclaim_timer, sge_timer_tx, 0);
+ 	timer_setup(&q->rx_reclaim_timer, sge_timer_rx, 0);
++#else
++	setup_timer(&q->tx_reclaim_timer, sge_timer_tx, (unsigned long)q);
++	setup_timer(&q->rx_reclaim_timer, sge_timer_rx, (unsigned long)q);
++#endif
+ 
+ 	q->fl[0].desc = alloc_ring(adapter->pdev, p->fl_size,
+ 				   sizeof(struct rx_desc),
+-- 
+1.8.3.1
+
