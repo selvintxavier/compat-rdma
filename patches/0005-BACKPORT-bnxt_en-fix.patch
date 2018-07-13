@@ -1,0 +1,136 @@
+From 9d56f8393716721e2639defe2e59594aa2e097f4 Mon Sep 17 00:00:00 2001
+From: Somnath Kotur <somnath.kotur@broadcom.com>
+Date: Wed, 11 Jul 2018 03:32:43 -0400
+Subject: [PATCH] OFED-4.17: Handle backport of NET_DIM in bnxt_en
+
+Conditional compilation of struct net_dim references inside bnxt.c
+
+Signed-off-by: Somnath Kotur <somnath.kotur@broadcom.com>
+---
+ drivers/net/ethernet/broadcom/bnxt/Makefile   |  5 ++++-
+ drivers/net/ethernet/broadcom/bnxt/bnxt.c     | 11 ++++++++---
+ drivers/net/ethernet/broadcom/bnxt/bnxt.h     |  9 ++++-----
+ drivers/net/ethernet/broadcom/bnxt/bnxt_dim.c |  4 ----
+ 4 files changed, 16 insertions(+), 13 deletions(-)
+
+diff --git a/drivers/net/ethernet/broadcom/bnxt/Makefile b/drivers/net/ethernet/broadcom/bnxt/Makefile
+index 7c560d5..6b05eab 100644
+--- a/drivers/net/ethernet/broadcom/bnxt/Makefile
++++ b/drivers/net/ethernet/broadcom/bnxt/Makefile
+@@ -1,4 +1,7 @@
+ obj-$(CONFIG_BNXT) += bnxt_en.o
+ 
+-bnxt_en-y := bnxt.o bnxt_sriov.o bnxt_ethtool.o bnxt_dcb.o bnxt_ulp.o bnxt_xdp.o bnxt_vfr.o bnxt_devlink.o bnxt_dim.o
++bnxt_en-y := bnxt.o bnxt_sriov.o bnxt_ethtool.o bnxt_dcb.o bnxt_ulp.o bnxt_xdp.o bnxt_vfr.o bnxt_devlink.o
+ bnxt_en-$(CONFIG_BNXT_FLOWER_OFFLOAD) += bnxt_tc.o
++ifdef HAVE_NET_DIM_H
++bnxt_en-y += bnxt_dim.o
++endif
+diff --git a/drivers/net/ethernet/broadcom/bnxt/bnxt.c b/drivers/net/ethernet/broadcom/bnxt/bnxt.c
+index 3f5dcd7..ba5af47 100644
+--- a/drivers/net/ethernet/broadcom/bnxt/bnxt.c
++++ b/drivers/net/ethernet/broadcom/bnxt/bnxt.c
+@@ -2035,6 +2035,7 @@ static int bnxt_poll(struct napi_struct *napi, int budget)
+ 		}
+ 	}
+ 	if (bp->flags & BNXT_FLAG_DIM) {
++#ifdef HAVE_NET_DIM_H
+ 		struct net_dim_sample dim_sample;
+ 
+ 		net_dim_sample(cpr->event_ctr,
+@@ -2042,6 +2043,7 @@ static int bnxt_poll(struct napi_struct *napi, int budget)
+ 			       cpr->rx_bytes,
+ 			       &dim_sample);
+ 		net_dim(&cpr->dim, dim_sample);
++#endif
+ 	}
+ 	mmiowb();
+ 	return work_done;
+@@ -6237,11 +6239,11 @@ static void bnxt_disable_napi(struct bnxt *bp)
+ 		return;
+ 
+ 	for (i = 0; i < bp->cp_nr_rings; i++) {
++#ifdef HAVE_NET_DIM_H
+ 		struct bnxt_cp_ring_info *cpr = &bp->bnapi[i]->cp_ring;
+-
+ 		if (bp->bnapi[i]->rx_ring)
+ 			cancel_work_sync(&cpr->dim.work);
+-
++#endif
+ 		napi_disable(&bp->bnapi[i]->napi);
+ 	}
+ }
+@@ -6251,13 +6253,16 @@ static void bnxt_enable_napi(struct bnxt *bp)
+ 	int i;
+ 
+ 	for (i = 0; i < bp->cp_nr_rings; i++) {
++#ifdef HAVE_NET_DIM_H
+ 		struct bnxt_cp_ring_info *cpr = &bp->bnapi[i]->cp_ring;
++#endif
+ 		bp->bnapi[i]->in_reset = false;
+-
++#ifdef HAVE_NET_DIM_H
+ 		if (bp->bnapi[i]->rx_ring) {
+ 			INIT_WORK(&cpr->dim.work, bnxt_dim_work);
+ 			cpr->dim.mode = NET_DIM_CQ_PERIOD_MODE_START_FROM_EQE;
+ 		}
++#endif
+ 		napi_enable(&bp->bnapi[i]->napi);
+ 	}
+ }
+diff --git a/drivers/net/ethernet/broadcom/bnxt/bnxt.h b/drivers/net/ethernet/broadcom/bnxt/bnxt.h
+index 7379ec6..7040230 100644
+--- a/drivers/net/ethernet/broadcom/bnxt/bnxt.h
++++ b/drivers/net/ethernet/broadcom/bnxt/bnxt.h
+@@ -28,10 +28,7 @@
+ #endif
+ #ifdef HAVE_NET_DIM_H
+ #include <linux/net_dim.h>
+-#else
+-#include "bnxt_dim.h"
+ #endif
+-
+ #ifdef HAVE_STRUCT_DMA_ATTRS
+ #define dma_map_single_attrs(dev, cpu_addr, size, dir, attrs) \
+         dma_map_single_attrs(dev, cpu_addr, size, dir, NULL)
+@@ -737,9 +734,9 @@ struct bnxt_cp_ring_info {
+ 	u64			rx_packets;
+ 	u64			rx_bytes;
+ 	u64			event_ctr;
+-
++#ifdef HAVE_NET_DIM_H
+ 	struct net_dim		dim;
+-
++#endif
+ 	struct tx_cmp		*cp_desc_ring[MAX_CP_PAGES];
+ 
+ 	dma_addr_t		cp_desc_mapping[MAX_CP_PAGES];
+@@ -1520,7 +1517,9 @@ int bnxt_setup_mq_tc(struct net_device *dev, u8 tc);
+ int bnxt_get_max_rings(struct bnxt *, int *, int *, bool);
+ int bnxt_restore_pf_fw_resources(struct bnxt *bp);
+ int bnxt_port_attr_get(struct bnxt *bp, struct switchdev_attr *attr);
++#ifdef HAVE_NET_DIM_H
+ void bnxt_dim_work(struct work_struct *work);
++#endif
+ int bnxt_hwrm_set_ring_coal(struct bnxt *bp, struct bnxt_napi *bnapi);
+ 
+ #endif
+diff --git a/drivers/net/ethernet/broadcom/bnxt/bnxt_dim.c b/drivers/net/ethernet/broadcom/bnxt/bnxt_dim.c
+index cabf39a..2b0c5c9 100644
+--- a/drivers/net/ethernet/broadcom/bnxt/bnxt_dim.c
++++ b/drivers/net/ethernet/broadcom/bnxt/bnxt_dim.c
+@@ -9,11 +9,7 @@
+ 
+ #include <linux/pci.h>
+ #include <linux/netdevice.h>
+-#ifdef HAVE_NET_DIM
+ #include <linux/net_dim.h>
+-#else
+-#include "bnxt_dim.h"
+-#endif
+ #include "bnxt_hsi.h"
+ #include "bnxt.h"
+ 
+-- 
+1.8.3.1
+
