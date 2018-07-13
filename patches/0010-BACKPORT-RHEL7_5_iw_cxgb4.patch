@@ -1,0 +1,311 @@
+From 5efe25fa177d3c2008845351982901c76104b22e Mon Sep 17 00:00:00 2001
+From: Arjun Vynipadath <arjun@chelsio.com>
+Date: Mon, 25 Jun 2018 09:59:40 +0530
+Subject: [PATCH] iw_cxgb4: Compilation fixes for RHEL7.5
+
+ - Check for new timer settings API, else use the old timer API
+ - Check if tcp_parse_options() has newly added parameter
+ - Fix Makefile include paths
+ - Add missing libcxgb_cm.h header file
+---
+ drivers/infiniband/hw/cxgb4/Makefile              |   4 +-
+ drivers/infiniband/hw/cxgb4/cm.c                  |  29 ++++
+ drivers/infiniband/hw/cxgb4/iw_cxgb4.h            |   3 +
+ drivers/infiniband/hw/cxgb4/qp.c                  |   3 +
+ drivers/net/ethernet/chelsio/libcxgb/libcxgb_cm.h | 155 ++++++++++++++++++++++
+ 5 files changed, 192 insertions(+), 2 deletions(-)
+ create mode 100644 drivers/net/ethernet/chelsio/libcxgb/libcxgb_cm.h
+
+diff --git a/drivers/infiniband/hw/cxgb4/Makefile b/drivers/infiniband/hw/cxgb4/Makefile
+index fa40b68..de4efdd 100644
+--- a/drivers/infiniband/hw/cxgb4/Makefile
++++ b/drivers/infiniband/hw/cxgb4/Makefile
+@@ -1,5 +1,5 @@
+-ccflags-y := -Idrivers/net/ethernet/chelsio/cxgb4
+-ccflags-y += -Idrivers/net/ethernet/chelsio/libcxgb
++ccflags-y := -I$(CWD)/drivers/net/ethernet/chelsio/cxgb4
++ccflags-y += -I$(CWD)/drivers/net/ethernet/chelsio/libcxgb
+ 
+ obj-$(CONFIG_INFINIBAND_CXGB4) += iw_cxgb4.o
+ 
+diff --git a/drivers/infiniband/hw/cxgb4/cm.c b/drivers/infiniband/hw/cxgb4/cm.c
+index 4cf17c6..d5fb5af 100644
+--- a/drivers/infiniband/hw/cxgb4/cm.c
++++ b/drivers/infiniband/hw/cxgb4/cm.c
+@@ -140,7 +140,11 @@ static struct workqueue_struct *workq;
+ static struct sk_buff_head rxq;
+ 
+ static struct sk_buff *get_skb(struct sk_buff *skb, int len, gfp_t gfp);
++#ifdef HAVE_TIMER_SETUP
+ static void ep_timeout(struct timer_list *t);
++#else
++static void ep_timeout(unsigned long arg);
++#endif
+ static void connect_reply_upcall(struct c4iw_ep *ep, int status);
+ static int sched(struct c4iw_dev *dev, struct sk_buff *skb);
+ 
+@@ -185,6 +189,10 @@ static void start_ep_timer(struct c4iw_ep *ep)
+ 	clear_bit(TIMEOUT, &ep->com.flags);
+ 	c4iw_get_ep(&ep->com);
+ 	ep->timer.expires = jiffies + ep_timeout_secs * HZ;
++#ifndef HAVE_TIMER_SETUP
++	ep->timer.data = (unsigned long)ep;
++	ep->timer.function = ep_timeout;
++#endif
+ 	add_timer(&ep->timer);
+ }
+ 
+@@ -2096,6 +2104,9 @@ static int c4iw_reconnect(struct c4iw_ep *ep)
+ 	__u8 *ra;
+ 
+ 	pr_debug("qp %p cm_id %p\n", ep->com.qp, ep->com.cm_id);
++#ifndef HAVE_TIMER_SETUP
++	init_timer(&ep->timer);
++#endif
+ 	c4iw_init_wr_wait(ep->com.wr_waitp);
+ 
+ 	/* When MPA revision is different on nodes, the node with MPA_rev=2
+@@ -2571,7 +2582,11 @@ static int pass_accept_req(struct c4iw_dev *dev, struct sk_buff *skb)
+ 	pr_debug("tx_chan %u smac_idx %u rss_qid %u\n",
+ 		 child_ep->tx_chan, child_ep->smac_idx, child_ep->rss_qid);
+ 
++#ifdef HAVE_TIMER_SETUP
+ 	timer_setup(&child_ep->timer, ep_timeout, 0);
++#else
++	init_timer(&child_ep->timer);
++#endif
+ 	cxgb4_insert_tid(t, child_ep, hwtid,
+ 			 child_ep->com.local_addr.ss_family);
+ 	insert_ep_tid(child_ep);
+@@ -3197,7 +3212,11 @@ int c4iw_connect(struct iw_cm_id *cm_id, struct iw_cm_conn_param *conn_param)
+ 		goto fail1;
+ 	}
+ 
++#ifdef HAVE_TIMER_SETUP
+ 	timer_setup(&ep->timer, ep_timeout, 0);
++#else
++	init_timer(&ep->timer);
++#endif
+ 	ep->plen = conn_param->private_data_len;
+ 	if (ep->plen)
+ 		memcpy(ep->mpa_pkt + sizeof(struct mpa_message),
+@@ -3745,7 +3764,11 @@ static void build_cpl_pass_accept_req(struct sk_buff *skb, int stid , u8 tos)
+ 	 */
+ 	memset(&tmp_opt, 0, sizeof(tmp_opt));
+ 	tcp_clear_options(&tmp_opt);
++#ifdef HAVE_TCP_PARSE_OPTIONS_5_PARAMETERS
+ 	tcp_parse_options(&init_net, skb, &tmp_opt, 0, NULL);
++#else
++	tcp_parse_options(skb, &tmp_opt, 0, NULL);
++#endif
+ 
+ 	req = __skb_push(skb, sizeof(*req));
+ 	memset(req, 0, sizeof(*req));
+@@ -4111,9 +4134,15 @@ static void process_work(struct work_struct *work)
+ 
+ static DECLARE_WORK(skb_work, process_work);
+ 
++#ifdef HAVE_TIMER_SETUP
+ static void ep_timeout(struct timer_list *t)
+ {
+ 	struct c4iw_ep *ep = from_timer(ep, t, timer);
++#else
++static void ep_timeout(unsigned long arg)
++{
++	struct c4iw_ep *ep = (struct c4iw_ep *)arg;
++#endif
+ 	int kickit = 0;
+ 
+ 	spin_lock(&timeout_lock);
+diff --git a/drivers/infiniband/hw/cxgb4/iw_cxgb4.h b/drivers/infiniband/hw/cxgb4/iw_cxgb4.h
+index 8310277..1cb8760 100644
+--- a/drivers/infiniband/hw/cxgb4/iw_cxgb4.h
++++ b/drivers/infiniband/hw/cxgb4/iw_cxgb4.h
+@@ -547,6 +547,9 @@ struct c4iw_qp {
+ 	struct mutex mutex;
+ 	struct kref kref;
+ 	wait_queue_head_t wait;
++#ifndef HAVE_TIMER_SETUP
++	struct timer_list timer;
++#endif
+ 	int sq_sig_all;
+ 	struct work_struct free_work;
+ 	struct c4iw_ucontext *ucontext;
+diff --git a/drivers/infiniband/hw/cxgb4/qp.c b/drivers/infiniband/hw/cxgb4/qp.c
+index ae167b6..30bdab6 100644
+--- a/drivers/infiniband/hw/cxgb4/qp.c
++++ b/drivers/infiniband/hw/cxgb4/qp.c
+@@ -2005,6 +2005,9 @@ struct ib_qp *c4iw_create_qp(struct ib_pd *pd, struct ib_qp_init_attr *attrs,
+ 		qhp->ucontext = ucontext;
+ 	}
+ 	qhp->ibqp.qp_num = qhp->wq.sq.qid;
++#ifndef HAVE_TIMER_SETUP
++	init_timer(&(qhp->timer));
++#endif
+ 	INIT_LIST_HEAD(&qhp->db_fc_entry);
+ 	pr_debug("sq id %u size %u memsize %zu num_entries %u rq id %u size %u memsize %zu num_entries %u\n",
+ 		 qhp->wq.sq.qid, qhp->wq.sq.size, qhp->wq.sq.memsize,
+diff --git a/drivers/net/ethernet/chelsio/libcxgb/libcxgb_cm.h b/drivers/net/ethernet/chelsio/libcxgb/libcxgb_cm.h
+new file mode 100644
+index 0000000..240ba9d
+--- /dev/null
++++ b/drivers/net/ethernet/chelsio/libcxgb/libcxgb_cm.h
+@@ -0,0 +1,155 @@
++/*
++ * Copyright (c) 2016 Chelsio Communications, Inc. All rights reserved.
++ *
++ * This software is available to you under a choice of one of two
++ * licenses.  You may choose to be licensed under the terms of the GNU
++ * General Public License (GPL) Version 2, available from the file
++ * COPYING in the main directory of this source tree, or the
++ * OpenIB.org BSD license below:
++ *
++ *     Redistribution and use in source and binary forms, with or
++ *     without modification, are permitted provided that the following
++ *     conditions are met:
++ *
++ *      - Redistributions of source code must retain the above
++ *	  copyright notice, this list of conditions and the following
++ *	  disclaimer.
++ *
++ *      - Redistributions in binary form must reproduce the above
++ *	  copyright notice, this list of conditions and the following
++ *	  disclaimer in the documentation and/or other materials
++ *	  provided with the distribution.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
++ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
++ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
++ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
++ * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
++ * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
++ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++ * SOFTWARE.
++ */
++
++#ifndef __LIBCXGB_CM_H__
++#define __LIBCXGB_CM_H__
++
++
++#include <net/tcp.h>
++
++#include <cxgb4.h>
++#include <t4_msg.h>
++#include <l2t.h>
++
++void
++cxgb_get_4tuple(struct cpl_pass_accept_req *, enum chip_type,
++		int *, __u8 *, __u8 *, __be16 *, __be16 *);
++struct dst_entry *
++cxgb_find_route(struct cxgb4_lld_info *,
++		struct net_device *(*)(struct net_device *),
++		__be32, __be32, __be16,	__be16, u8);
++struct dst_entry *
++cxgb_find_route6(struct cxgb4_lld_info *,
++		 struct net_device *(*)(struct net_device *),
++		 __u8 *, __u8 *, __be16, __be16, u8, __u32);
++
++/* Returns whether a CPL status conveys negative advice.
++ */
++static inline bool cxgb_is_neg_adv(unsigned int status)
++{
++	return status == CPL_ERR_RTX_NEG_ADVICE ||
++	       status == CPL_ERR_PERSIST_NEG_ADVICE ||
++	       status == CPL_ERR_KEEPALV_NEG_ADVICE;
++}
++
++static inline void
++cxgb_best_mtu(const unsigned short *mtus, unsigned short mtu,
++	      unsigned int *idx, int use_ts, int ipv6)
++{
++	unsigned short hdr_size = (ipv6 ?
++				   sizeof(struct ipv6hdr) :
++				   sizeof(struct iphdr)) +
++				  sizeof(struct tcphdr) +
++				  (use_ts ?
++				   round_up(TCPOLEN_TIMESTAMP, 4) : 0);
++	unsigned short data_size = mtu - hdr_size;
++
++	cxgb4_best_aligned_mtu(mtus, hdr_size, data_size, 8, idx);
++}
++
++static inline u32 cxgb_compute_wscale(u32 win)
++{
++	u32 wscale = 0;
++
++	while (wscale < 14 && (65535 << wscale) < win)
++		wscale++;
++	return wscale;
++}
++
++static inline void
++cxgb_mk_tid_release(struct sk_buff *skb, u32 len, u32 tid, u16 chan)
++{
++	struct cpl_tid_release *req;
++
++	req = __skb_put_zero(skb, len);
++
++	INIT_TP_WR(req, tid);
++	OPCODE_TID(req) = cpu_to_be32(MK_OPCODE_TID(CPL_TID_RELEASE, tid));
++	set_wr_txq(skb, CPL_PRIORITY_SETUP, chan);
++}
++
++static inline void
++cxgb_mk_close_con_req(struct sk_buff *skb, u32 len, u32 tid, u16 chan,
++		      void *handle, arp_err_handler_t handler)
++{
++	struct cpl_close_con_req *req;
++
++	req = __skb_put_zero(skb, len);
++
++	INIT_TP_WR(req, tid);
++	OPCODE_TID(req) = cpu_to_be32(MK_OPCODE_TID(CPL_CLOSE_CON_REQ, tid));
++	set_wr_txq(skb, CPL_PRIORITY_DATA, chan);
++	t4_set_arp_err_handler(skb, handle, handler);
++}
++
++static inline void
++cxgb_mk_abort_req(struct sk_buff *skb, u32 len, u32 tid, u16 chan,
++		  void *handle, arp_err_handler_t handler)
++{
++	struct cpl_abort_req *req;
++
++	req = __skb_put_zero(skb, len);
++
++	INIT_TP_WR(req, tid);
++	OPCODE_TID(req) = cpu_to_be32(MK_OPCODE_TID(CPL_ABORT_REQ, tid));
++	req->cmd = CPL_ABORT_SEND_RST;
++	set_wr_txq(skb, CPL_PRIORITY_DATA, chan);
++	t4_set_arp_err_handler(skb, handle, handler);
++}
++
++static inline void
++cxgb_mk_abort_rpl(struct sk_buff *skb, u32 len, u32 tid, u16 chan)
++{
++	struct cpl_abort_rpl *rpl;
++
++	rpl = __skb_put_zero(skb, len);
++
++	INIT_TP_WR(rpl, tid);
++	OPCODE_TID(rpl) = cpu_to_be32(MK_OPCODE_TID(CPL_ABORT_RPL, tid));
++	rpl->cmd = CPL_ABORT_NO_RST;
++	set_wr_txq(skb, CPL_PRIORITY_DATA, chan);
++}
++
++static inline void
++cxgb_mk_rx_data_ack(struct sk_buff *skb, u32 len, u32 tid, u16 chan,
++		    u32 credit_dack)
++{
++	struct cpl_rx_data_ack *req;
++
++	req = __skb_put_zero(skb, len);
++
++	INIT_TP_WR(req, tid);
++	OPCODE_TID(req) = cpu_to_be32(MK_OPCODE_TID(CPL_RX_DATA_ACK, tid));
++	req->credit_dack = cpu_to_be32(credit_dack);
++	set_wr_txq(skb, CPL_PRIORITY_ACK, chan);
++}
++#endif
+-- 
+1.8.3.1
+
