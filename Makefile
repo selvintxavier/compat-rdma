@@ -4,6 +4,7 @@ obj-$(CONFIG_CHELSIO_T3)        += drivers/net/ethernet/chelsio/cxgb3/
 obj-$(CONFIG_CHELSIO_T4)        += drivers/net/ethernet/chelsio/cxgb4/
 obj-$(CONFIG_MLX4_CORE)         += drivers/net/ethernet/mellanox/mlx4/
 obj-$(CONFIG_MLX5_CORE)         += drivers/net/ethernet/mellanox/mlx5/core/
+obj-$(CONFIG_MLXFW)             += drivers/net/ethernet/mellanox/mlxfw/
 obj-$(CONFIG_BE2NET)            += drivers/net/ethernet/emulex/benet/
 obj-$(CONFIG_I40E)              += drivers/net/ethernet/intel/i40e/
 obj-$(CONFIG_QED)		+= drivers/net/ethernet/qlogic/qed/
