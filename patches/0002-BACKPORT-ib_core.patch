@@ -4,7 +4,7 @@ Subject: [PATCH] BACKPORT: ib_core
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
  drivers/infiniband/core/addr.c          |  15 ++++
- drivers/infiniband/core/cma.c           |  27 ++++++
+ drivers/infiniband/core/cma.c           |  39 +++++++++
  drivers/infiniband/core/cma_configfs.c  |  93 ++++++++++++++++++++
  drivers/infiniband/core/core_priv.h     |   9 ++
  drivers/infiniband/core/cq.c            |  35 +++++++-
@@ -14,19 +14,19 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  drivers/infiniband/core/netlink.c       |  29 +++++++
  drivers/infiniband/core/nldev.c         |  25 ++++++
  drivers/infiniband/core/restrack.c      |   4 +
- drivers/infiniband/core/roce_gid_mgmt.c |  35 ++++++++
+ drivers/infiniband/core/roce_gid_mgmt.c |  39 +++++++++
  drivers/infiniband/core/sa_query.c      |  47 ++++++++++
  drivers/infiniband/core/ucm.c           |  16 ++++
  drivers/infiniband/core/ucma.c          |  15 ++++
  drivers/infiniband/core/umem.c          |  31 +++++++
  drivers/infiniband/core/user_mad.c      |  20 +++++
  drivers/infiniband/core/uverbs_main.c   |  33 +++++++
- drivers/infiniband/core/verbs.c         |   4 +
+ drivers/infiniband/core/verbs.c         |   2 +
  include/rdma/ib_addr.h                  |  23 +++++
  include/rdma/ib_verbs.h                 | 147 ++++++++++++++++++++++++++++++++
  include/rdma/rdma_netlink.h             |   4 +
  include/rdma/restrack.h                 |   2 +
- 23 files changed, 693 insertions(+), 1 deletion(-)
+ 23 files changed, 707 insertions(+), 1 deletion(-)
 
 diff --git a/drivers/infiniband/core/addr.c b/drivers/infiniband/core/addr.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -144,6 +144,42 @@ index xxxxxxx..xxxxxxx xxxxxx
  }
  
  static void iboe_mcast_work_handler(struct work_struct *work)
+@@ -4574,7 +4601,11 @@ static int __init cma_init(void)
+ 
+ 	ib_sa_register_client(&sa_client);
+ 	rdma_addr_register_client(&addr_client);
++#ifdef HAVE_REGISTER_NETDEVICE_NOTIFIER_RH
++	register_netdevice_notifier_rh(&cma_nb);
++#else
+ 	register_netdevice_notifier(&cma_nb);
++#endif
+ 
+ 	ret = ib_register_client(&cma_client);
+ 	if (ret)
+@@ -4586,7 +4617,11 @@ static int __init cma_init(void)
+ 	return 0;
+ 
+ err:
++#ifdef HAVE_REGISTER_NETDEVICE_NOTIFIER_RH
++	unregister_netdevice_notifier_rh(&cma_nb);
++#else
+ 	unregister_netdevice_notifier(&cma_nb);
++#endif
+ 	rdma_addr_unregister_client(&addr_client);
+ 	ib_sa_unregister_client(&sa_client);
+ err_wq:
+@@ -4599,7 +4634,11 @@ static void __exit cma_cleanup(void)
+ 	cma_configfs_exit();
+ 	rdma_nl_unregister(RDMA_NL_RDMA_CM);
+ 	ib_unregister_client(&cma_client);
++#ifdef HAVE_REGISTER_NETDEVICE_NOTIFIER_RH
++	unregister_netdevice_notifier_rh(&cma_nb);
++#else
+ 	unregister_netdevice_notifier(&cma_nb);
++#endif
+ 	rdma_addr_unregister_client(&addr_client);
+ 	ib_sa_unregister_client(&sa_client);
+ 	unregister_pernet_subsys(&cma_pernet_operations);
 diff --git a/drivers/infiniband/core/cma_configfs.c b/drivers/infiniband/core/cma_configfs.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/cma_configfs.c
@@ -937,6 +973,18 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	return 0;
  }
+@@ -773,7 +808,11 @@ void __exit roce_gid_mgmt_cleanup(void)
+ 	if (IS_ENABLED(CONFIG_IPV6))
+ 		unregister_inet6addr_notifier(&nb_inet6addr);
+ 	unregister_inetaddr_notifier(&nb_inetaddr);
++#ifdef HAVE_REGISTER_NETDEVICE_NOTIFIER_RH
++	unregister_netdevice_notifier_rh(&nb_netdevice);
++#else
+ 	unregister_netdevice_notifier(&nb_netdevice);
++#endif
+ 	/* Ensure all gid deletion tasks complete before we go down,
+ 	 * to avoid any reference to free'd memory. By the time
+ 	 * ib-core is removed, all physical devices have been removed,
 diff --git a/drivers/infiniband/core/sa_query.c b/drivers/infiniband/core/sa_query.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/sa_query.c
@@ -1284,29 +1332,19 @@ diff --git a/drivers/infiniband/core/verbs.c b/drivers/infiniband/core/verbs.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/verbs.c
 +++ b/drivers/infiniband/core/verbs.c
-@@ -2032,6 +2032,7 @@ int ib_get_vf_config(struct ib_device *device, int vf, u8 port,
+@@ -2012,6 +2012,7 @@ int ib_check_mr_status(struct ib_mr *mr, u32 check_mask,
  }
- EXPORT_SYMBOL(ib_get_vf_config);
+ EXPORT_SYMBOL(ib_check_mr_status);
  
-+#ifdef HAVE_NDO_GET_VF_STATS
- int ib_get_vf_stats(struct ib_device *device, int vf, u8 port,
- 		    struct ifla_vf_stats *stats)
++#ifdef HAVE_NDO_SET_VF_MAC
+ int ib_set_vf_link_state(struct ib_device *device, int vf, u8 port,
+ 			 int state)
  {
-@@ -2041,7 +2042,9 @@ int ib_get_vf_stats(struct ib_device *device, int vf, u8 port,
- 	return device->get_vf_stats(device, vf, port, stats);
- }
- EXPORT_SYMBOL(ib_get_vf_stats);
-+#endif
- 
-+#ifdef HAVE_NDO_SET_VF_GUID
- int ib_set_vf_guid(struct ib_device *device, int vf, u8 port, u64 guid,
- 		   int type)
- {
-@@ -2051,6 +2054,7 @@ int ib_set_vf_guid(struct ib_device *device, int vf, u8 port, u64 guid,
+@@ -2051,6 +2052,7 @@ int ib_set_vf_guid(struct ib_device *device, int vf, u8 port, u64 guid,
  	return device->set_vf_guid(device, vf, port, guid, type);
  }
  EXPORT_SYMBOL(ib_set_vf_guid);
-+#endif
++#endif /* HAVE_NDO_SET_VF_MAC */
  
  /**
   * ib_map_mr_sg() - Map the largest prefix of a dma mapped SG list
