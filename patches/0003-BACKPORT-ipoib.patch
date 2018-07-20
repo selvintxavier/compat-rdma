@@ -3,15 +3,28 @@ Subject: [PATCH] BACKPORT: ipoib
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
- drivers/infiniband/ulp/ipoib/ipoib_main.c    | 50 +++++++++++++++++++++++++++-
- drivers/infiniband/ulp/ipoib/ipoib_netlink.c | 31 ++++++++++++++++-
- 2 files changed, 79 insertions(+), 2 deletions(-)
+ drivers/infiniband/ulp/ipoib/ipoib_main.c    | 64 +++++++++++++++++++++++++++-
+ drivers/infiniband/ulp/ipoib/ipoib_netlink.c | 31 +++++++++++++-
+ 2 files changed, 93 insertions(+), 2 deletions(-)
 
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_main.c b/drivers/infiniband/ulp/ipoib/ipoib_main.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib_main.c
 +++ b/drivers/infiniband/ulp/ipoib/ipoib_main.c
-@@ -258,14 +258,21 @@ static int ipoib_change_mtu(struct net_device *dev, int new_mtu)
+@@ -112,8 +112,12 @@ static struct ib_client ipoib_client = {
+ static int ipoib_netdev_event(struct notifier_block *this,
+ 			      unsigned long event, void *ptr)
+ {
++#ifdef HAVE_NETDEV_NOTIFIER_INFO
+ 	struct netdev_notifier_info *ni = ptr;
+ 	struct net_device *dev = ni->dev;
++#else
++	struct net_device *dev = ptr;
++#endif
+ 
+ 	if (dev->netdev_ops->ndo_open != ipoib_open)
+ 		return NOTIFY_DONE;
+@@ -258,14 +262,21 @@ static int ipoib_change_mtu(struct net_device *dev, int new_mtu)
  				"link layer MTU - 4 (%u)\n", priv->mcast_mtu);
  
  	new_mtu = min(priv->mcast_mtu, priv->admin_mtu);
@@ -34,7 +47,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  		if (carrier_status)
  			netif_carrier_on(dev);
-@@ -303,9 +310,21 @@ static bool ipoib_is_dev_match_addr_rcu(const struct sockaddr *addr,
+@@ -303,9 +314,21 @@ static bool ipoib_is_dev_match_addr_rcu(const struct sockaddr *addr,
  		if (!in_dev)
  			return false;
  
@@ -56,7 +69,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		in_dev_put(in_dev);
  		if (ret_addr)
  			return true;
-@@ -1868,6 +1887,7 @@ static int ipoib_get_vf_config(struct net_device *dev, int vf,
+@@ -1868,6 +1891,7 @@ static int ipoib_get_vf_config(struct net_device *dev, int vf,
  	return 0;
  }
  
@@ -64,7 +77,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  static int ipoib_set_vf_guid(struct net_device *dev, int vf, u64 guid, int type)
  {
  	struct ipoib_dev_priv *priv = ipoib_priv(dev);
-@@ -1877,6 +1897,7 @@ static int ipoib_set_vf_guid(struct net_device *dev, int vf, u64 guid, int type)
+@@ -1877,6 +1901,7 @@ static int ipoib_set_vf_guid(struct net_device *dev, int vf, u64 guid, int type)
  
  	return ib_set_vf_guid(priv->ca, vf, priv->port, guid, type);
  }
@@ -72,7 +85,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  static int ipoib_get_vf_stats(struct net_device *dev, int vf,
  			      struct ifla_vf_stats *vf_stats)
-@@ -1894,7 +1915,11 @@ static const struct net_device_ops ipoib_netdev_ops_pf = {
+@@ -1894,7 +1919,11 @@ static const struct net_device_ops ipoib_netdev_ops_pf = {
  	.ndo_uninit		 = ipoib_uninit,
  	.ndo_open		 = ipoib_open,
  	.ndo_stop		 = ipoib_stop,
@@ -84,7 +97,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	.ndo_fix_features	 = ipoib_fix_features,
  	.ndo_start_xmit		 = ipoib_start_xmit,
  	.ndo_tx_timeout		 = ipoib_timeout,
-@@ -1903,7 +1928,9 @@ static const struct net_device_ops ipoib_netdev_ops_pf = {
+@@ -1903,7 +1932,9 @@ static const struct net_device_ops ipoib_netdev_ops_pf = {
  	.ndo_set_vf_link_state	 = ipoib_set_vf_link_state,
  	.ndo_get_vf_config	 = ipoib_get_vf_config,
  	.ndo_get_vf_stats	 = ipoib_get_vf_stats,
@@ -94,11 +107,13 @@ index xxxxxxx..xxxxxxx xxxxxx
  	.ndo_set_mac_address	 = ipoib_set_mac,
  	.ndo_get_stats64	 = ipoib_get_stats,
  	.ndo_do_ioctl		 = ipoib_ioctl,
-@@ -1913,7 +1940,11 @@ static const struct net_device_ops ipoib_netdev_ops_vf = {
+@@ -1913,7 +1944,13 @@ static const struct net_device_ops ipoib_netdev_ops_vf = {
  	.ndo_uninit		 = ipoib_uninit,
  	.ndo_open		 = ipoib_open,
  	.ndo_stop		 = ipoib_stop,
-+#ifdef HAVE_NDO_CHANGE_MTU_EXTENDED
++#ifdef HAVE_NDO_CHANGE_MTU_RH74
++	.ndo_change_mtu_rh74	 = ipoib_change_mtu,
++#elif defined(HAVE_NDO_CHANGE_MTU_EXTENDED)
 +	.extended.ndo_change_mtu = ipoib_change_mtu,
 +#else
  	.ndo_change_mtu		 = ipoib_change_mtu,
@@ -106,7 +121,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	.ndo_fix_features	 = ipoib_fix_features,
  	.ndo_start_xmit	 	 = ipoib_start_xmit,
  	.ndo_tx_timeout		 = ipoib_timeout,
-@@ -1985,9 +2016,16 @@ static struct net_device
+@@ -1985,9 +2022,16 @@ static struct net_device
  	struct net_device *dev;
  	struct rdma_netdev *rn;
  
@@ -123,7 +138,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	if (!dev)
  		return NULL;
  
-@@ -2012,14 +2050,22 @@ static struct net_device *ipoib_get_netdev(struct ib_device *hca, u8 port,
+@@ -2012,14 +2056,22 @@ static struct net_device *ipoib_get_netdev(struct ib_device *hca, u8 port,
  	if (hca->alloc_rdma_netdev) {
  		dev = hca->alloc_rdma_netdev(hca, port,
  					     RDMA_NETDEV_IPOIB, name,
@@ -146,7 +161,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  						  ipoib_setup_common);
  
  	return dev;
-@@ -2262,7 +2308,9 @@ static struct net_device *ipoib_add_port(const char *format,
+@@ -2262,7 +2314,9 @@ static struct net_device *ipoib_add_port(const char *format,
  	/* MTU will be reset when mcast join happens */
  	priv->dev->mtu  = IPOIB_UD_MTU(priv->max_ib_mtu);
  	priv->mcast_mtu  = priv->admin_mtu = priv->dev->mtu;
@@ -156,6 +171,32 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	priv->dev->neigh_priv_len = sizeof(struct ipoib_neigh);
  
+@@ -2491,8 +2545,12 @@ static int __init ipoib_init_module(void)
+ 		goto err_client;
+ 
+ #ifdef CONFIG_INFINIBAND_IPOIB_DEBUG
++#ifdef HAVE_REGISTER_NETDEVICE_NOTIFIER_RH
++	register_netdevice_notifier_rh(&ipoib_netdev_notifier);
++#else
+ 	register_netdevice_notifier(&ipoib_netdev_notifier);
+ #endif
++#endif
+ 	return 0;
+ 
+ err_client:
+@@ -2511,8 +2569,12 @@ err_fs:
+ static void __exit ipoib_cleanup_module(void)
+ {
+ #ifdef CONFIG_INFINIBAND_IPOIB_DEBUG
++#ifdef HAVE_REGISTER_NETDEVICE_NOTIFIER_RH
++	unregister_netdevice_notifier_rh(&ipoib_netdev_notifier);
++#else
+ 	unregister_netdevice_notifier(&ipoib_netdev_notifier);
+ #endif
++#endif
+ 	ipoib_netlink_fini();
+ 	ib_unregister_client(&ipoib_client);
+ 	ib_sa_unregister_client(&ipoib_sa_client);
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_netlink.c b/drivers/infiniband/ulp/ipoib/ipoib_netlink.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib_netlink.c
