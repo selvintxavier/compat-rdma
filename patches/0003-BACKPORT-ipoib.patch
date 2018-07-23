@@ -3,9 +3,9 @@ Subject: [PATCH] BACKPORT: ipoib
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
- drivers/infiniband/ulp/ipoib/ipoib_main.c    | 64 +++++++++++++++++++++++++++-
- drivers/infiniband/ulp/ipoib/ipoib_netlink.c | 31 +++++++++++++-
- 2 files changed, 93 insertions(+), 2 deletions(-)
+ drivers/infiniband/ulp/ipoib/ipoib_main.c    | 56 +++++++++++++++++++++++++++-
+ drivers/infiniband/ulp/ipoib/ipoib_netlink.c | 31 ++++++++++++++-
+ 2 files changed, 85 insertions(+), 2 deletions(-)
 
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_main.c b/drivers/infiniband/ulp/ipoib/ipoib_main.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -171,32 +171,6 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	priv->dev->neigh_priv_len = sizeof(struct ipoib_neigh);
  
-@@ -2491,8 +2545,12 @@ static int __init ipoib_init_module(void)
- 		goto err_client;
- 
- #ifdef CONFIG_INFINIBAND_IPOIB_DEBUG
-+#ifdef HAVE_REGISTER_NETDEVICE_NOTIFIER_RH
-+	register_netdevice_notifier_rh(&ipoib_netdev_notifier);
-+#else
- 	register_netdevice_notifier(&ipoib_netdev_notifier);
- #endif
-+#endif
- 	return 0;
- 
- err_client:
-@@ -2511,8 +2569,12 @@ err_fs:
- static void __exit ipoib_cleanup_module(void)
- {
- #ifdef CONFIG_INFINIBAND_IPOIB_DEBUG
-+#ifdef HAVE_REGISTER_NETDEVICE_NOTIFIER_RH
-+	unregister_netdevice_notifier_rh(&ipoib_netdev_notifier);
-+#else
- 	unregister_netdevice_notifier(&ipoib_netdev_notifier);
- #endif
-+#endif
- 	ipoib_netlink_fini();
- 	ib_unregister_client(&ipoib_client);
- 	ib_sa_unregister_client(&ipoib_sa_client);
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_netlink.c b/drivers/infiniband/ulp/ipoib/ipoib_netlink.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/ulp/ipoib/ipoib_netlink.c

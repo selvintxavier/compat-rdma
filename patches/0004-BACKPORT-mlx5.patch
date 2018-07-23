@@ -4,7 +4,7 @@ Subject: [PATCH] BACKPORT: mlx5
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
  drivers/infiniband/hw/mlx5/ib_virt.c               |  12 +
- drivers/infiniband/hw/mlx5/main.c                  |  21 +
+ drivers/infiniband/hw/mlx5/main.c                  |  13 +
  drivers/infiniband/hw/mlx5/mlx5_ib.h               |   2 +
  drivers/infiniband/hw/mlx5/mr.c                    |  12 +
  drivers/net/ethernet/mellanox/mlx5/core/en.h       |   6 +
@@ -12,11 +12,11 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  drivers/net/ethernet/mellanox/mlx5/core/en_fs.c    |   2 +
  drivers/net/ethernet/mellanox/mlx5/core/en_main.c  | 486 ++++++++++++++++++++-
  drivers/net/ethernet/mellanox/mlx5/core/health.c   |  14 +
- drivers/net/ethernet/mellanox/mlx5/core/lag.c      |  55 +++
+ drivers/net/ethernet/mellanox/mlx5/core/lag.c      |  47 ++
  .../net/ethernet/mellanox/mlx5/core/lib/clock.c    |   5 +
  drivers/net/ethernet/mellanox/mlx5/core/lib/gid.c  |  16 +
  drivers/net/ethernet/mellanox/mlx5/core/main.c     |   2 +
- 13 files changed, 870 insertions(+), 6 deletions(-)
+ 13 files changed, 854 insertions(+), 6 deletions(-)
 
 diff --git a/drivers/infiniband/hw/mlx5/ib_virt.c b/drivers/infiniband/hw/mlx5/ib_virt.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -113,31 +113,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  			return -EPERM;
  #elif !(defined(CONFIG_PPC) || (defined(CONFIG_ARM) && defined(CONFIG_MMU)))
  			return -EPERM;
-@@ -4289,7 +4296,11 @@ static int mlx5_add_netdev_notifier(struct mlx5_ib_dev *dev, u8 port_num)
- 	int err;
- 
- 	dev->roce[port_num].nb.notifier_call = mlx5_netdev_event;
-+#ifdef HAVE_REGISTER_NETDEVICE_NOTIFIER_RH
-+	err = register_netdevice_notifier_rh(&dev->roce[port_num].nb);
-+#else
- 	err = register_netdevice_notifier(&dev->roce[port_num].nb);
-+#endif
- 	if (err) {
- 		dev->roce[port_num].nb.notifier_call = NULL;
- 		return err;
-@@ -4301,7 +4312,11 @@ static int mlx5_add_netdev_notifier(struct mlx5_ib_dev *dev, u8 port_num)
- static void mlx5_remove_netdev_notifier(struct mlx5_ib_dev *dev, u8 port_num)
- {
- 	if (dev->roce[port_num].nb.notifier_call) {
-+#ifdef HAVE_REGISTER_NETDEVICE_NOTIFIER_RH
-+		unregister_netdevice_notifier_rh(&dev->roce[port_num].nb);
-+#else
- 		unregister_netdevice_notifier(&dev->roce[port_num].nb);
-+#endif
- 		dev->roce[port_num].nb.notifier_call = NULL;
- 	}
- }
-@@ -5201,12 +5216,18 @@ int mlx5_ib_stage_caps_init(struct mlx5_ib_dev *dev)
+@@ -5201,12 +5208,18 @@ int mlx5_ib_stage_caps_init(struct mlx5_ib_dev *dev)
  	if (MLX5_CAP_GEN(mdev, ipoib_enhanced_offloads))
  		dev->ib_dev.alloc_rdma_netdev	= mlx5_ib_alloc_rdma_netdev;
  
@@ -2163,16 +2139,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	struct mlx5_lag *ldev = NULL;
  	struct mlx5_core_dev *tmp_dev;
  
-@@ -515,16 +534,22 @@ void mlx5_lag_add(struct mlx5_core_dev *dev, struct net_device *netdev)
- 
- 	if (!ldev->nb.notifier_call) {
- 		ldev->nb.notifier_call = mlx5_lag_netdev_event;
-+#ifdef HAVE_REGISTER_NETDEVICE_NOTIFIER_RH
-+		if (register_netdevice_notifier_rh(&ldev->nb)) {
-+#else
- 		if (register_netdevice_notifier(&ldev->nb)) {
-+#endif
- 			ldev->nb.notifier_call = NULL;
+@@ -520,11 +539,13 @@ void mlx5_lag_add(struct mlx5_core_dev *dev, struct net_device *netdev)
  			mlx5_core_err(dev, "Failed to register LAG netdev notifier\n");
  		}
  	}
@@ -2186,15 +2153,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	struct mlx5_lag *ldev;
  	int i;
  
-@@ -543,14 +568,22 @@ void mlx5_lag_remove(struct mlx5_core_dev *dev)
- 
- 	if (i == MLX5_MAX_PORTS) {
- 		if (ldev->nb.notifier_call)
-+#ifdef HAVE_REGISTER_NETDEVICE_NOTIFIER_RH
-+			unregister_netdevice_notifier_rh(&ldev->nb);
-+#else
- 			unregister_netdevice_notifier(&ldev->nb);
-+#endif
+@@ -547,10 +568,14 @@ void mlx5_lag_remove(struct mlx5_core_dev *dev)
  		cancel_delayed_work_sync(&ldev->bond_work);
  		mlx5_lag_dev_free(ldev);
  	}
@@ -2209,7 +2168,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	struct mlx5_lag *ldev;
  	bool res;
  
-@@ -560,11 +593,13 @@ bool mlx5_lag_is_active(struct mlx5_core_dev *dev)
+@@ -560,11 +585,13 @@ bool mlx5_lag_is_active(struct mlx5_core_dev *dev)
  	mutex_unlock(&lag_mutex);
  
  	return res;
@@ -2223,7 +2182,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	struct mlx5_lag *ldev;
  	int ret = 0;
  	bool lag_active;
-@@ -589,6 +624,9 @@ static int mlx5_lag_set_state(struct mlx5_core_dev *dev, bool allow)
+@@ -589,6 +616,9 @@ static int mlx5_lag_set_state(struct mlx5_core_dev *dev, bool allow)
  unlock:
  	mlx5_dev_list_unlock();
  	return ret;
@@ -2233,7 +2192,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  }
  
  int mlx5_lag_forbid(struct mlx5_core_dev *dev)
-@@ -603,6 +641,9 @@ int mlx5_lag_allow(struct mlx5_core_dev *dev)
+@@ -603,6 +633,9 @@ int mlx5_lag_allow(struct mlx5_core_dev *dev)
  
  struct net_device *mlx5_lag_get_roce_netdev(struct mlx5_core_dev *dev)
  {
@@ -2243,7 +2202,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	struct net_device *ndev = NULL;
  	struct mlx5_lag *ldev;
  
-@@ -625,11 +666,15 @@ unlock:
+@@ -625,11 +658,15 @@ unlock:
  	mutex_unlock(&lag_mutex);
  
  	return ndev;
@@ -2259,7 +2218,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	struct mlx5_core_dev *dev = container_of(priv, struct mlx5_core_dev,
  						 priv);
  	struct mlx5_lag *ldev;
-@@ -643,6 +688,7 @@ bool mlx5_lag_intf_add(struct mlx5_interface *intf, struct mlx5_priv *priv)
+@@ -643,6 +680,7 @@ bool mlx5_lag_intf_add(struct mlx5_interface *intf, struct mlx5_priv *priv)
  
  	/* If bonded, we do not add an IB device for PF1. */
  	return false;
@@ -2267,7 +2226,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  }
  
  int mlx5_lag_query_cong_counters(struct mlx5_core_dev *dev,
-@@ -652,7 +698,9 @@ int mlx5_lag_query_cong_counters(struct mlx5_core_dev *dev,
+@@ -652,7 +690,9 @@ int mlx5_lag_query_cong_counters(struct mlx5_core_dev *dev,
  {
  	int outlen = MLX5_ST_SZ_BYTES(query_cong_statistics_out);
  	struct mlx5_core_dev *mdev[MLX5_MAX_PORTS];
@@ -2277,7 +2236,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	int num_ports;
  	int ret, i, j;
  	void *out;
-@@ -663,6 +711,7 @@ int mlx5_lag_query_cong_counters(struct mlx5_core_dev *dev,
+@@ -663,6 +703,7 @@ int mlx5_lag_query_cong_counters(struct mlx5_core_dev *dev,
  
  	memset(values, 0, sizeof(*values) * num_counters);
  
@@ -2285,7 +2244,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	mutex_lock(&lag_mutex);
  	ldev = mlx5_lag_dev_get(dev);
  	if (ldev && mlx5_lag_is_bonded(ldev)) {
-@@ -673,6 +722,10 @@ int mlx5_lag_query_cong_counters(struct mlx5_core_dev *dev,
+@@ -673,6 +714,10 @@ int mlx5_lag_query_cong_counters(struct mlx5_core_dev *dev,
  		num_ports = 1;
  		mdev[0] = dev;
  	}
@@ -2296,7 +2255,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	for (i = 0; i < num_ports; ++i) {
  		ret = mlx5_cmd_query_cong_counter(mdev[i], false, out, outlen);
-@@ -684,7 +737,9 @@ int mlx5_lag_query_cong_counters(struct mlx5_core_dev *dev,
+@@ -684,7 +729,9 @@ int mlx5_lag_query_cong_counters(struct mlx5_core_dev *dev,
  	}
  
  unlock:
