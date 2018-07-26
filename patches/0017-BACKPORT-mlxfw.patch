@@ -1,0 +1,52 @@
+From: Vladimir Sokolovsky <vlad@mellanox.com>
+Subject: [PATCH] BACKPORT: mlxfw
+
+Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
+---
+ drivers/net/ethernet/mellanox/mlxfw/mlxfw_fsm.c            | 3 +++
+ drivers/net/ethernet/mellanox/mlxfw/mlxfw_mfa2.c           | 3 +++
+ drivers/net/ethernet/mellanox/mlxfw/mlxfw_mfa2_tlv_multi.c | 3 +++
+ 3 files changed, 9 insertions(+)
+
+diff --git a/drivers/net/ethernet/mellanox/mlxfw/mlxfw_fsm.c b/drivers/net/ethernet/mellanox/mlxfw/mlxfw_fsm.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/net/ethernet/mellanox/mlxfw/mlxfw_fsm.c
++++ b/drivers/net/ethernet/mellanox/mlxfw/mlxfw_fsm.c
+@@ -32,6 +32,9 @@
+  * POSSIBILITY OF SUCH DAMAGE.
+  */
+ 
++#ifdef pr_fmt
++#undef pr_fmt
++#endif
+ #define pr_fmt(fmt) "mlxfw: " fmt
+ 
+ #include <linux/kernel.h>
+diff --git a/drivers/net/ethernet/mellanox/mlxfw/mlxfw_mfa2.c b/drivers/net/ethernet/mellanox/mlxfw/mlxfw_mfa2.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/net/ethernet/mellanox/mlxfw/mlxfw_mfa2.c
++++ b/drivers/net/ethernet/mellanox/mlxfw/mlxfw_mfa2.c
+@@ -32,6 +32,9 @@
+  * POSSIBILITY OF SUCH DAMAGE.
+  */
+ 
++#ifdef pr_fmt
++#undef pr_fmt
++#endif
+ #define pr_fmt(fmt) "mlxfw_mfa2: " fmt
+ 
+ #include <linux/kernel.h>
+diff --git a/drivers/net/ethernet/mellanox/mlxfw/mlxfw_mfa2_tlv_multi.c b/drivers/net/ethernet/mellanox/mlxfw/mlxfw_mfa2_tlv_multi.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/net/ethernet/mellanox/mlxfw/mlxfw_mfa2_tlv_multi.c
++++ b/drivers/net/ethernet/mellanox/mlxfw/mlxfw_mfa2_tlv_multi.c
+@@ -32,6 +32,9 @@
+  * POSSIBILITY OF SUCH DAMAGE.
+  */
+ 
++#ifdef pr_fmt
++#undef pr_fmt
++#endif
+ #define pr_fmt(fmt) "MFA2: " fmt
+ 
+ #include "mlxfw_mfa2_tlv_multi.h"
