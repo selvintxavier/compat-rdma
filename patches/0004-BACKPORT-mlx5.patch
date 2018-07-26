@@ -11,12 +11,13 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  .../net/ethernet/mellanox/mlx5/core/en_ethtool.c   | 243 ++++++++++-
  drivers/net/ethernet/mellanox/mlx5/core/en_fs.c    |   2 +
  drivers/net/ethernet/mellanox/mlx5/core/en_main.c  | 486 ++++++++++++++++++++-
+ drivers/net/ethernet/mellanox/mlx5/core/fs_core.c  |   2 +-
  drivers/net/ethernet/mellanox/mlx5/core/health.c   |  14 +
  drivers/net/ethernet/mellanox/mlx5/core/lag.c      |  47 ++
  .../net/ethernet/mellanox/mlx5/core/lib/clock.c    |   5 +
  drivers/net/ethernet/mellanox/mlx5/core/lib/gid.c  |  16 +
  drivers/net/ethernet/mellanox/mlx5/core/main.c     |   2 +
- 13 files changed, 854 insertions(+), 6 deletions(-)
+ 14 files changed, 855 insertions(+), 7 deletions(-)
 
 diff --git a/drivers/infiniband/hw/mlx5/ib_virt.c b/drivers/infiniband/hw/mlx5/ib_virt.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -2020,6 +2021,19 @@ index xxxxxxx..xxxxxxx xxxxxx
  	mlx5e_set_dev_port_mtu(priv);
  
  	mlx5_lag_add(mdev, netdev);
+diff --git a/drivers/net/ethernet/mellanox/mlx5/core/fs_core.c b/drivers/net/ethernet/mellanox/mlx5/core/fs_core.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/net/ethernet/mellanox/mlx5/core/fs_core.c
++++ b/drivers/net/ethernet/mellanox/mlx5/core/fs_core.c
+@@ -848,7 +848,7 @@ static int update_root_ft_create(struct mlx5_flow_table *ft, struct fs_prio
+ 	struct mlx5_flow_root_namespace *root = find_root(&prio->node);
+ 	struct mlx5_ft_underlay_qp *uqp;
+ 	int min_level = INT_MAX;
+-	int err;
++	int err = 0;
+ 	u32 qpn;
+ 
+ 	if (root->root_ft)
 diff --git a/drivers/net/ethernet/mellanox/mlx5/core/health.c b/drivers/net/ethernet/mellanox/mlx5/core/health.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx5/core/health.c
