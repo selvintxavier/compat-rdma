@@ -1,0 +1,128 @@
+From: Vladimir Sokolovsky <vlad@mellanox.com>
+Subject: [PATCH] BACKPORT: srp
+
+Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
+---
+ drivers/infiniband/ulp/srp/ib_srp.c | 44 +++++++++++++++++++++++++++++++++++++
+ drivers/scsi/scsi_transport_srp.c   |  9 ++++++++
+ 2 files changed, 53 insertions(+)
+
+diff --git a/drivers/infiniband/ulp/srp/ib_srp.c b/drivers/infiniband/ulp/srp/ib_srp.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/infiniband/ulp/srp/ib_srp.c
++++ b/drivers/infiniband/ulp/srp/ib_srp.c
+@@ -30,6 +30,9 @@
+  * SOFTWARE.
+  */
+ 
++#ifdef pr_fmt
++#undef pr_fmt
++#endif
+ #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+ 
+ #include <linux/module.h>
+@@ -70,6 +73,13 @@ MODULE_INFO(release_date, DRV_RELDATE);
+ #define DYNAMIC_DEBUG_BRANCH(descriptor) false
+ #endif
+ 
++#ifndef DEFINE_DYNAMIC_DEBUG_METADATA
++#define DEFINE_DYNAMIC_DEBUG_METADATA(name, fmt)
++#endif
++#ifndef DYNAMIC_DEBUG_BRANCH
++#define DYNAMIC_DEBUG_BRANCH(descriptor) false
++#endif
++
+ static unsigned int srp_sg_tablesize;
+ static unsigned int cmd_sg_entries;
+ static unsigned int indirect_sg_entries;
+@@ -2179,8 +2189,13 @@ static void srp_process_aer_req(struct srp_rdma_ch *ch,
+ 	};
+ 	s32 delta = be32_to_cpu(req->req_lim_delta);
+ 
++#ifdef HAVE_SCSI_DEVICE_U64_LUN
+ 	shost_printk(KERN_ERR, target->scsi_host, PFX
+ 		     "ignoring AER for LUN %llu\n", scsilun_to_int(&req->lun));
++#else
++	shost_printk(KERN_ERR, target->scsi_host, PFX
++		     "ignoring AER for LUN %u\n", scsilun_to_int(&req->lun));
++#endif
+ 
+ 	if (srp_response_common(ch, delta, &rsp, sizeof(rsp)))
+ 		shost_printk(KERN_ERR, target->scsi_host, PFX
+@@ -2839,13 +2854,40 @@ static int srp_rdma_cm_handler(struct rdma_cm_id *cm_id,
+  *
+  * Returns queue depth.
+  */
++#ifdef HAVE_SCSI_HOST_TEMPLATE_TRACK_QUEUE_DEPTH
+ static int
+ srp_change_queue_depth(struct scsi_device *sdev, int qdepth)
+ {
+ 	if (!sdev->tagged_supported)
+ 		qdepth = 1;
++#ifdef HAVE_SCSI_CHANGE_QUEUE_DEPTH
+ 	return scsi_change_queue_depth(sdev, qdepth);
++#else
++	scsi_adjust_queue_depth(sdev, qdepth);
++	return sdev->queue_depth;
++#endif //HAVE_SCSI_CHANGE_QUEUE_DEPTH
+ }
++#else
++static int
++srp_change_queue_depth(struct scsi_device *sdev, int qdepth, int reason)
++{
++	struct Scsi_Host *shost = sdev->host;
++	int max_depth;
++	if (reason == SCSI_QDEPTH_DEFAULT || reason == SCSI_QDEPTH_RAMP_UP) {
++		max_depth = shost->can_queue;
++		if (!sdev->tagged_supported)
++			max_depth = 1;
++		if (qdepth > max_depth)
++			qdepth = max_depth;
++		scsi_adjust_queue_depth(sdev, scsi_get_tag_type(sdev), qdepth);
++	} else if (reason == SCSI_QDEPTH_QFULL)
++		scsi_track_queue_full(sdev, qdepth);
++	else
++		return -EOPNOTSUPP;
++
++	return sdev->queue_depth;
++}
++#endif //HAVE_SCSI_HOST_TEMPLATE_TRACK_QUEUE_DEPTH
+ 
+ static int srp_send_tsk_mgmt(struct srp_rdma_ch *ch, u64 req_tag, u64 lun,
+ 			     u8 func, u8 *status)
+@@ -3227,7 +3269,9 @@ static struct scsi_host_template srp_template = {
+ 	.cmd_per_lun			= SRP_DEFAULT_CMD_SQ_SIZE,
+ 	.use_clustering			= ENABLE_CLUSTERING,
+ 	.shost_attrs			= srp_host_attrs,
++#ifdef HAVE_SCSI_HOST_TEMPLATE_TRACK_QUEUE_DEPTH
+ 	.track_queue_depth		= 1,
++#endif
+ };
+ 
+ static int srp_sdev_count(struct Scsi_Host *host)
+diff --git a/drivers/scsi/scsi_transport_srp.c b/drivers/scsi/scsi_transport_srp.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/scsi/scsi_transport_srp.c
++++ b/drivers/scsi/scsi_transport_srp.c
+@@ -571,12 +571,21 @@ int srp_reconnect_rport(struct srp_rport *rport)
+ 		 * invoking scsi_target_unblock() won't change the state of
+ 		 * these devices into running so do that explicitly.
+ 		 */
++#ifdef HAVE_SCSI_DEVICE_STATE_MUTEX
+ 		shost_for_each_device(sdev, shost) {
+ 			mutex_lock(&sdev->state_mutex);
++#else
++		spin_lock_irq(shost->host_lock);
++		__shost_for_each_device(sdev, shost)
++#endif
+ 			if (sdev->sdev_state == SDEV_OFFLINE)
+ 				sdev->sdev_state = SDEV_RUNNING;
++#ifdef HAVE_SCSI_DEVICE_STATE_MUTEX
+ 			mutex_unlock(&sdev->state_mutex);
+ 		}
++#else
++		spin_unlock_irq(shost->host_lock);
++#endif
+ 	} else if (rport->state == SRP_RPORT_RUNNING) {
+ 		/*
+ 		 * srp_reconnect_rport() has been invoked with fast_io_fail
