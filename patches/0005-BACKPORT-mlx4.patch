@@ -6,7 +6,7 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  drivers/net/ethernet/mellanox/mlx4/catas.c         |  17 +
  drivers/net/ethernet/mellanox/mlx4/en_dcb_nl.c     |  29 ++
  drivers/net/ethernet/mellanox/mlx4/en_ethtool.c    |   8 +
- drivers/net/ethernet/mellanox/mlx4/en_netdev.c     | 378 ++++++++++++++++++++-
+ drivers/net/ethernet/mellanox/mlx4/en_netdev.c     | 380 ++++++++++++++++++++-
  drivers/net/ethernet/mellanox/mlx4/en_rx.c         |  52 ++-
  drivers/net/ethernet/mellanox/mlx4/main.c          |   2 +
  drivers/net/ethernet/mellanox/mlx4/mlx4_en.h       |  12 +
@@ -18,7 +18,7 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  drivers/net/ethernet/mellanox/mlx5/core/en_tc.c    |  16 +
  drivers/net/ethernet/mellanox/mlx5/core/en_txrx.c  |   4 +
  drivers/net/ethernet/mellanox/mlx5/core/eswitch.c  |   2 +
- 15 files changed, 676 insertions(+), 19 deletions(-)
+ 15 files changed, 678 insertions(+), 19 deletions(-)
 
 diff --git a/drivers/net/ethernet/mellanox/mlx4/catas.c b/drivers/net/ethernet/mellanox/mlx4/catas.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -926,7 +926,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	.ndo_set_vf_rate	= mlx4_en_set_vf_rate,
  	.ndo_set_vf_spoofchk	= mlx4_en_set_vf_spoofchk,
  	.ndo_set_vf_link_state	= mlx4_en_set_vf_link_state,
-@@ -2987,16 +3250,46 @@ static const struct net_device_ops mlx4_netdev_ops_master = {
+@@ -2987,16 +3250,48 @@ static const struct net_device_ops mlx4_netdev_ops_master = {
  #endif
  	.ndo_set_features	= mlx4_en_set_features,
  	.ndo_fix_features	= mlx4_en_fix_features,
@@ -945,7 +945,9 @@ index xxxxxxx..xxxxxxx xxxxxx
  #ifdef CONFIG_RFS_ACCEL
  	.ndo_rx_flow_steer	= mlx4_en_filter_rfs,
  #endif
++#ifdef HAVE_NETDEV_EXT_NDO_GET_PHYS_PORT_ID
  	.ndo_get_phys_port_id	= mlx4_en_get_phys_port_id,
++#endif
 +#ifdef HAVE_KERNEL_WITH_VXLAN_SUPPORT_ON
 +#ifdef HAVE_NDO_UDP_TUNNEL_ADD
  	.ndo_udp_tunnel_add	= mlx4_en_add_vxlan_port,
@@ -973,7 +975,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  };
  
  struct mlx4_en_bond {
-@@ -3424,24 +3717,35 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -3424,24 +3719,35 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  	netif_set_real_num_tx_queues(dev, priv->tx_ring_num[TX]);
  	netif_set_real_num_rx_queues(dev, priv->rx_ring_num);
  
@@ -1009,7 +1011,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	if (!(mdev->dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_SKIP_OUTER_VLAN)) {
  		dev->features |= NETIF_F_HW_VLAN_STAG_RX |
  			NETIF_F_HW_VLAN_STAG_FILTER;
-@@ -3475,45 +3779,93 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -3475,45 +3781,93 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  		      MLX4_DEV_CAP_FLAG2_SKIP_OUTER_VLAN))
  			dev->hw_features |= NETIF_F_HW_VLAN_STAG_TX;
  	}
@@ -1103,7 +1105,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	mdev->pndev[port] = dev;
  	mdev->upper[port] = NULL;
-@@ -3599,8 +3951,12 @@ int mlx4_en_reset_config(struct net_device *dev,
+@@ -3599,8 +3953,12 @@ int mlx4_en_reset_config(struct net_device *dev,
  
  	if (priv->hwtstamp_config.tx_type == ts_config.tx_type &&
  	    priv->hwtstamp_config.rx_filter == ts_config.rx_filter &&
@@ -1116,7 +1118,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		return 0; /* Nothing to change */
  
  	if (DEV_FEATURE_CHANGED(dev, features, NETIF_F_HW_VLAN_CTAG_RX) &&
-@@ -3619,7 +3975,11 @@ int mlx4_en_reset_config(struct net_device *dev,
+@@ -3619,7 +3977,11 @@ int mlx4_en_reset_config(struct net_device *dev,
  	memcpy(&new_prof, priv->prof, sizeof(struct mlx4_en_port_profile));
  	memcpy(&new_prof.hwtstamp_config, &ts_config, sizeof(ts_config));
  
@@ -1128,7 +1130,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	if (err)
  		goto out;
  
-@@ -3639,18 +3999,26 @@ int mlx4_en_reset_config(struct net_device *dev,
+@@ -3639,18 +4001,26 @@ int mlx4_en_reset_config(struct net_device *dev,
  		/* RX time-stamping is OFF, update the RX vlan offload
  		 * to the latest wanted state
  		 */
