@@ -7,7 +7,7 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  drivers/net/ethernet/mellanox/mlx4/en_dcb_nl.c     |  29 ++
  drivers/net/ethernet/mellanox/mlx4/en_ethtool.c    |   8 +
  drivers/net/ethernet/mellanox/mlx4/en_netdev.c     | 380 ++++++++++++++++++++-
- drivers/net/ethernet/mellanox/mlx4/en_rx.c         |  52 ++-
+ drivers/net/ethernet/mellanox/mlx4/en_rx.c         |  66 +++-
  drivers/net/ethernet/mellanox/mlx4/main.c          |   2 +
  drivers/net/ethernet/mellanox/mlx4/mlx4_en.h       |  12 +
  drivers/net/ethernet/mellanox/mlx5/core/en.h       |   2 +-
@@ -18,7 +18,7 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  drivers/net/ethernet/mellanox/mlx5/core/en_tc.c    |  16 +
  drivers/net/ethernet/mellanox/mlx5/core/en_txrx.c  |   4 +
  drivers/net/ethernet/mellanox/mlx5/core/eswitch.c  |   2 +
- 15 files changed, 678 insertions(+), 19 deletions(-)
+ 15 files changed, 692 insertions(+), 19 deletions(-)
 
 diff --git a/drivers/net/ethernet/mellanox/mlx4/catas.c b/drivers/net/ethernet/mellanox/mlx4/catas.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -1171,7 +1171,21 @@ index xxxxxxx..xxxxxxx xxxxxx
  #include <linux/bpf_trace.h>
  #include <linux/mlx4/cq.h>
  #include <linux/slab.h>
-@@ -286,8 +288,10 @@ int mlx4_en_create_rx_ring(struct mlx4_en_priv *priv,
+@@ -145,9 +147,13 @@ static int mlx4_en_prepare_rx_desc(struct mlx4_en_priv *priv,
+ 			frags->page = ring->page_cache.buf[ring->page_cache.index].page;
+ 			frags->dma  = ring->page_cache.buf[ring->page_cache.index].dma;
+ 		}
++#ifdef HAVE_XDP_BUFF
+ 		frags->page_offset = XDP_PACKET_HEADROOM;
+ 		rx_desc->data[0].addr = cpu_to_be64(frags->dma +
+ 						    XDP_PACKET_HEADROOM);
++#else
++		rx_desc->data[0].addr = cpu_to_be64(frags->dma);
++#endif
+ 		return 0;
+ 	}
+ 
+@@ -286,8 +292,10 @@ int mlx4_en_create_rx_ring(struct mlx4_en_priv *priv,
  	ring->log_stride = ffs(ring->stride) - 1;
  	ring->buf_size = ring->size * ring->stride + TXBB_SIZE;
  
@@ -1182,7 +1196,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	tmp = size * roundup_pow_of_two(MLX4_EN_MAX_RX_FRAGS *
  					sizeof(struct mlx4_en_rx_alloc));
-@@ -318,8 +322,10 @@ err_info:
+@@ -318,8 +326,10 @@ err_info:
  	kvfree(ring->rx_info);
  	ring->rx_info = NULL;
  err_xdp_info:
@@ -1193,7 +1207,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	kfree(ring);
  	*pring = NULL;
  
-@@ -435,6 +441,7 @@ void mlx4_en_destroy_rx_ring(struct mlx4_en_priv *priv,
+@@ -435,6 +445,7 @@ void mlx4_en_destroy_rx_ring(struct mlx4_en_priv *priv,
  {
  	struct mlx4_en_dev *mdev = priv->mdev;
  	struct mlx4_en_rx_ring *ring = *pring;
@@ -1201,7 +1215,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	struct bpf_prog *old_prog;
  
  	old_prog = rcu_dereference_protected(
-@@ -442,7 +449,10 @@ void mlx4_en_destroy_rx_ring(struct mlx4_en_priv *priv,
+@@ -442,7 +453,10 @@ void mlx4_en_destroy_rx_ring(struct mlx4_en_priv *priv,
  					lockdep_is_held(&mdev->state_lock));
  	if (old_prog)
  		bpf_prog_put(old_prog);
@@ -1212,7 +1226,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	mlx4_free_hwq_res(mdev->dev, &ring->wqres, size * stride + TXBB_SIZE);
  	kvfree(ring->rx_info);
  	ring->rx_info = NULL;
-@@ -657,11 +667,17 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
+@@ -657,11 +671,17 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
  	struct mlx4_en_priv *priv = netdev_priv(dev);
  	int factor = priv->cqe_factor;
  	struct mlx4_en_rx_ring *ring;
@@ -1230,7 +1244,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	int polled = 0;
  	int index;
  
-@@ -670,11 +686,15 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
+@@ -670,11 +690,15 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
  
  	ring = priv->rx_ring[cq_ring];
  
@@ -1246,7 +1260,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	/* We assume a 1:1 mapping between CQEs and Rx descriptors, so Rx
  	 * descriptor offset can be deduced from the CQE index instead of
-@@ -757,9 +777,12 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
+@@ -757,9 +781,12 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
  		/* A bpf program gets first chance to drop the packet. It may
  		 * read bytes but not past the end of the frag.
  		 */
@@ -1259,7 +1273,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  			u32 act;
  
  			dma = frags[0].dma + frags[0].page_offset;
-@@ -767,20 +790,29 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
+@@ -767,20 +794,29 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
  						priv->frag_info[0].frag_size,
  						DMA_FROM_DEVICE);
  
@@ -1289,7 +1303,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  			switch (act) {
  			case XDP_PASS:
-@@ -792,18 +824,23 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
+@@ -792,18 +828,23 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
  					frags[0].page = NULL;
  					goto next;
  				}
@@ -1313,7 +1327,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  		ring->bytes += length;
  		ring->packets++;
-@@ -885,13 +922,17 @@ next:
+@@ -885,13 +926,17 @@ next:
  			break;
  	}
  
@@ -1331,7 +1345,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  		mlx4_cq_set_ci(&cq->mcq);
  		wmb(); /* ensure HW sees CQ consumer before we post new buffers */
-@@ -940,7 +981,9 @@ int mlx4_en_poll_rx_cq(struct napi_struct *napi, int budget)
+@@ -940,7 +985,9 @@ int mlx4_en_poll_rx_cq(struct napi_struct *napi, int budget)
  	/* If we used up all the quota - we're probably not done yet... */
  	if (done == budget || !clean_complete) {
  		const struct cpumask *aff;
@@ -1341,7 +1355,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		int cpu_curr;
  
  		/* in case we got here because of !clean_complete */
-@@ -949,8 +992,12 @@ int mlx4_en_poll_rx_cq(struct napi_struct *napi, int budget)
+@@ -949,8 +996,12 @@ int mlx4_en_poll_rx_cq(struct napi_struct *napi, int budget)
  		INC_PERF_COUNTER(priv->pstats.napi_quota);
  
  		cpu_curr = smp_processor_id();
@@ -1354,7 +1368,26 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  		if (likely(cpumask_test_cpu(cpu_curr, aff)))
  			return budget;
-@@ -976,6 +1023,7 @@ void mlx4_en_calc_rx_buf(struct net_device *dev)
+@@ -965,8 +1016,18 @@ int mlx4_en_poll_rx_cq(struct napi_struct *napi, int budget)
+ 			done--;
+ 	}
+ 	/* Done for now */
++#ifdef HAVE_NAPI_COMPLETE_DONE
++#ifdef NAPI_COMPLETE_DONE_RET_VALUE
+ 	if (likely(napi_complete_done(napi, done)))
+ 		mlx4_en_arm_cq(priv, cq);
++#else
++	napi_complete_done(napi, done);
++	mlx4_en_arm_cq(priv, cq);
++#endif
++#else
++	napi_complete(napi);
++	mlx4_en_arm_cq(priv, cq);
++#endif
+ 	return done;
+ }
+ 
+@@ -976,6 +1037,7 @@ void mlx4_en_calc_rx_buf(struct net_device *dev)
  	int eff_mtu = MLX4_EN_EFF_MTU(dev->mtu);
  	int i = 0;
  
@@ -1362,7 +1395,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	/* bpf requires buffers to be set up as 1 packet per page.
  	 * This only works when num_frags == 1.
  	 */
-@@ -988,7 +1036,9 @@ void mlx4_en_calc_rx_buf(struct net_device *dev)
+@@ -988,7 +1050,9 @@ void mlx4_en_calc_rx_buf(struct net_device *dev)
  		priv->dma_dir = PCI_DMA_BIDIRECTIONAL;
  		priv->rx_headroom = XDP_PACKET_HEADROOM;
  		i = 1;
