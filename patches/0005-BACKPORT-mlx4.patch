@@ -1,24 +1,17 @@
 From: Vladimir Sokolovsky <vlad@mellanox.com>
-Subject: [PATCH] BACKPORT: mlx4
+Subject: [PATCH] mlx4
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
- drivers/net/ethernet/mellanox/mlx4/catas.c         |  17 +
- drivers/net/ethernet/mellanox/mlx4/en_dcb_nl.c     |  29 ++
- drivers/net/ethernet/mellanox/mlx4/en_ethtool.c    |   8 +
- drivers/net/ethernet/mellanox/mlx4/en_netdev.c     | 380 ++++++++++++++++++++-
- drivers/net/ethernet/mellanox/mlx4/en_rx.c         |  66 +++-
- drivers/net/ethernet/mellanox/mlx4/main.c          |   2 +
- drivers/net/ethernet/mellanox/mlx4/mlx4_en.h       |  12 +
- drivers/net/ethernet/mellanox/mlx5/core/en.h       |   2 +-
- .../net/ethernet/mellanox/mlx5/core/en_ethtool.c   |   8 -
- drivers/net/ethernet/mellanox/mlx5/core/en_main.c  |  24 +-
- drivers/net/ethernet/mellanox/mlx5/core/en_rep.c   | 102 ++++++
- drivers/net/ethernet/mellanox/mlx5/core/en_rx.c    |  39 +++
- drivers/net/ethernet/mellanox/mlx5/core/en_tc.c    |  16 +
- drivers/net/ethernet/mellanox/mlx5/core/en_txrx.c  |   4 +
- drivers/net/ethernet/mellanox/mlx5/core/eswitch.c  |   2 +
- 15 files changed, 692 insertions(+), 19 deletions(-)
+ drivers/net/ethernet/mellanox/mlx4/catas.c       |  17 +
+ drivers/net/ethernet/mellanox/mlx4/en_dcb_nl.c   |  29 ++
+ drivers/net/ethernet/mellanox/mlx4/en_ethtool.c  |   8 +
+ drivers/net/ethernet/mellanox/mlx4/en_netdev.c   | 378 ++++++++++++++++++++++-
+ drivers/net/ethernet/mellanox/mlx4/en_rx.c       |  66 +++-
+ drivers/net/ethernet/mellanox/mlx4/en_selftest.c |   4 +-
+ drivers/net/ethernet/mellanox/mlx4/main.c        |   2 +
+ drivers/net/ethernet/mellanox/mlx4/mlx4_en.h     |  12 +
+ 8 files changed, 508 insertions(+), 8 deletions(-)
 
 diff --git a/drivers/net/ethernet/mellanox/mlx4/catas.c b/drivers/net/ethernet/mellanox/mlx4/catas.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -830,7 +823,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	.ndo_do_ioctl		= mlx4_en_ioctl,
  	.ndo_tx_timeout		= mlx4_en_tx_timeout,
  	.ndo_vlan_rx_add_vid	= mlx4_en_vlan_rx_add_vid,
-@@ -2948,21 +3150,74 @@ static const struct net_device_ops mlx4_netdev_ops = {
+@@ -2948,21 +3150,73 @@ static const struct net_device_ops mlx4_netdev_ops = {
  #ifdef CONFIG_NET_POLL_CONTROLLER
  	.ndo_poll_controller	= mlx4_en_netpoll,
  #endif
@@ -846,8 +839,7 @@ index xxxxxxx..xxxxxxx xxxxxx
 +#ifdef HAVE_NDO_SETUP_TC
 +#if defined(HAVE_NDO_SETUP_TC_4_PARAMS) || \
 +    defined(HAVE_NDO_SETUP_TC_TAKES_CHAIN_INDEX) || \
-+    defined(HAVE_TC_FLOWER_OFFLOAD) && \
-+    !defined(CONFIG_COMPAT_CLS_FLOWER_MOD)
++    defined(HAVE_TC_FLOWER_OFFLOAD)
  	.ndo_setup_tc		= __mlx4_en_setup_tc,
 +#else
 +	.ndo_setup_tc           = mlx4_en_setup_tc,
@@ -905,7 +897,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	.ndo_open		= mlx4_en_open,
  	.ndo_stop		= mlx4_en_close,
  	.ndo_start_xmit		= mlx4_en_xmit,
-@@ -2971,12 +3226,20 @@ static const struct net_device_ops mlx4_netdev_ops_master = {
+@@ -2971,12 +3225,20 @@ static const struct net_device_ops mlx4_netdev_ops_master = {
  	.ndo_set_rx_mode	= mlx4_en_set_rx_mode,
  	.ndo_set_mac_address	= mlx4_en_set_mac,
  	.ndo_validate_addr	= eth_validate_addr,
@@ -926,7 +918,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	.ndo_set_vf_rate	= mlx4_en_set_vf_rate,
  	.ndo_set_vf_spoofchk	= mlx4_en_set_vf_spoofchk,
  	.ndo_set_vf_link_state	= mlx4_en_set_vf_link_state,
-@@ -2987,16 +3250,48 @@ static const struct net_device_ops mlx4_netdev_ops_master = {
+@@ -2987,16 +3249,47 @@ static const struct net_device_ops mlx4_netdev_ops_master = {
  #endif
  	.ndo_set_features	= mlx4_en_set_features,
  	.ndo_fix_features	= mlx4_en_fix_features,
@@ -935,8 +927,7 @@ index xxxxxxx..xxxxxxx xxxxxx
 +#else
 +#if defined(HAVE_NDO_SETUP_TC_4_PARAMS) || \
 +    defined(HAVE_NDO_SETUP_TC_TAKES_CHAIN_INDEX) || \
-+    defined(HAVE_TC_FLOWER_OFFLOAD) && \
-+    !defined(CONFIG_COMPAT_CLS_FLOWER_MOD)
++    defined(HAVE_TC_FLOWER_OFFLOAD)
  	.ndo_setup_tc		= __mlx4_en_setup_tc,
 +#else
 +	.ndo_setup_tc           = mlx4_en_setup_tc,
@@ -975,7 +966,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  };
  
  struct mlx4_en_bond {
-@@ -3424,24 +3719,35 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -3424,24 +3717,35 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  	netif_set_real_num_tx_queues(dev, priv->tx_ring_num[TX]);
  	netif_set_real_num_rx_queues(dev, priv->rx_ring_num);
  
@@ -1011,7 +1002,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	if (!(mdev->dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_SKIP_OUTER_VLAN)) {
  		dev->features |= NETIF_F_HW_VLAN_STAG_RX |
  			NETIF_F_HW_VLAN_STAG_FILTER;
-@@ -3475,45 +3781,93 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -3475,45 +3779,93 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  		      MLX4_DEV_CAP_FLAG2_SKIP_OUTER_VLAN))
  			dev->hw_features |= NETIF_F_HW_VLAN_STAG_TX;
  	}
@@ -1105,7 +1096,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	mdev->pndev[port] = dev;
  	mdev->upper[port] = NULL;
-@@ -3599,8 +3953,12 @@ int mlx4_en_reset_config(struct net_device *dev,
+@@ -3599,8 +3951,12 @@ int mlx4_en_reset_config(struct net_device *dev,
  
  	if (priv->hwtstamp_config.tx_type == ts_config.tx_type &&
  	    priv->hwtstamp_config.rx_filter == ts_config.rx_filter &&
@@ -1118,7 +1109,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		return 0; /* Nothing to change */
  
  	if (DEV_FEATURE_CHANGED(dev, features, NETIF_F_HW_VLAN_CTAG_RX) &&
-@@ -3619,7 +3977,11 @@ int mlx4_en_reset_config(struct net_device *dev,
+@@ -3619,7 +3975,11 @@ int mlx4_en_reset_config(struct net_device *dev,
  	memcpy(&new_prof, priv->prof, sizeof(struct mlx4_en_port_profile));
  	memcpy(&new_prof.hwtstamp_config, &ts_config, sizeof(ts_config));
  
@@ -1130,7 +1121,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	if (err)
  		goto out;
  
-@@ -3639,18 +4001,26 @@ int mlx4_en_reset_config(struct net_device *dev,
+@@ -3639,18 +3999,26 @@ int mlx4_en_reset_config(struct net_device *dev,
  		/* RX time-stamping is OFF, update the RX vlan offload
  		 * to the latest wanted state
  		 */
@@ -1406,6 +1397,21 @@ index xxxxxxx..xxxxxxx xxxxxx
  		int frag_size_max = 2048, buf_size = 0;
  
  		/* should not happen, right ? */
+diff --git a/drivers/net/ethernet/mellanox/mlx4/en_selftest.c b/drivers/net/ethernet/mellanox/mlx4/en_selftest.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/net/ethernet/mellanox/mlx4/en_selftest.c
++++ b/drivers/net/ethernet/mellanox/mlx4/en_selftest.c
+@@ -63,8 +63,8 @@ static int mlx4_en_test_loopback_xmit(struct mlx4_en_priv *priv)
+ 
+ 	skb_reserve(skb, NET_IP_ALIGN);
+ 
+-	ethh = skb_put(skb, sizeof(struct ethhdr));
+-	packet = skb_put(skb, packet_size);
++	ethh = (struct ethhdr *)skb_put(skb, sizeof(struct ethhdr));
++	packet = (unsigned char *)skb_put(skb, packet_size);
+ 	memcpy(ethh->h_dest, priv->dev->dev_addr, ETH_ALEN);
+ 	eth_zero_addr(ethh->h_source);
+ 	ethh->h_proto = htons(ETH_P_ARP);
 diff --git a/drivers/net/ethernet/mellanox/mlx4/main.c b/drivers/net/ethernet/mellanox/mlx4/main.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/net/ethernet/mellanox/mlx4/main.c
@@ -1485,580 +1491,3 @@ index xxxxxxx..xxxxxxx xxxxxx
  void mlx4_en_xmit_doorbell(struct mlx4_en_tx_ring *ring);
  bool mlx4_en_rx_recycle(struct mlx4_en_rx_ring *ring,
  			struct mlx4_en_rx_alloc *frame);
-diff --git a/drivers/net/ethernet/mellanox/mlx5/core/en.h b/drivers/net/ethernet/mellanox/mlx5/core/en.h
-index xxxxxxx..xxxxxxx xxxxxx
---- a/drivers/net/ethernet/mellanox/mlx5/core/en.h
-+++ b/drivers/net/ethernet/mellanox/mlx5/core/en.h
-@@ -546,7 +546,7 @@ struct mlx5e_rq {
- 	struct mlx5_core_dev  *mdev;
- 	struct mlx5_core_mkey  umr_mkey;
- 
--#ifdef HAVE_NET_XDP_H
-+#ifdef HAVE_XDP_BUFF_RXQ
- 	/* XDP read-mostly */
- 	struct xdp_rxq_info    xdp_rxq;
- #endif
-diff --git a/drivers/net/ethernet/mellanox/mlx5/core/en_ethtool.c b/drivers/net/ethernet/mellanox/mlx5/core/en_ethtool.c
-index xxxxxxx..xxxxxxx xxxxxx
---- a/drivers/net/ethernet/mellanox/mlx5/core/en_ethtool.c
-+++ b/drivers/net/ethernet/mellanox/mlx5/core/en_ethtool.c
-@@ -1170,7 +1170,6 @@ static int mlx5e_set_tunable(struct net_device *dev,
- 	mutex_unlock(&priv->state_lock);
- 	return err;
- }
--#endif
- 
- static void mlx5e_get_pauseparam(struct net_device *netdev,
- 				 struct ethtool_pauseparam *pauseparam)
-@@ -1847,8 +1846,6 @@ const struct ethtool_ops mlx5e_ethtool_ops = {
- 	.get_link_ksettings  = mlx5e_get_link_ksettings,
- 	.set_link_ksettings  = mlx5e_set_link_ksettings,
- #endif
--	.get_settings  = mlx5e_get_settings,
--	.set_settings  = mlx5e_set_settings,
- #if defined(HAVE_GET_SET_RXFH) && !defined(HAVE_GET_SET_RXFH_INDIR_EXT)
- 	.get_rxfh_key_size   = mlx5e_get_rxfh_key_size,
- #endif
-@@ -1915,11 +1912,6 @@ const struct ethtool_ops mlx5e_ethtool_ops = {
- 	.set_msglevel      = mlx5e_set_msglevel,
- #endif
- 	.set_priv_flags    = mlx5e_set_priv_flags,
--#ifdef HAVE_GET_SET_DUMP
--	.get_dump_flag     = mlx5e_get_dump_flag,
--	.get_dump_data     = mlx5e_get_dump_data,
--	.set_dump          = mlx5e_set_dump,
--#endif
- 
- };
- 
-diff --git a/drivers/net/ethernet/mellanox/mlx5/core/en_main.c b/drivers/net/ethernet/mellanox/mlx5/core/en_main.c
-index xxxxxxx..xxxxxxx xxxxxx
---- a/drivers/net/ethernet/mellanox/mlx5/core/en_main.c
-+++ b/drivers/net/ethernet/mellanox/mlx5/core/en_main.c
-@@ -46,6 +46,7 @@
- #include "en.h"
- #ifdef HAVE_TC_OFFLOAD
- #include "en_tc.h"
-+#endif
- #include "en_rep.h"
- #include "en_accel/ipsec.h"
- #include "en_accel/ipsec_rxtx.h"
-@@ -451,7 +452,7 @@ static int mlx5e_alloc_rq(struct mlx5e_channel *c,
- 		goto err_rq_wq_destroy;
- 	}
- 
--#ifdef HAVE_NET_XDP_H
-+#ifdef HAVE_XDP_BUFF_RXQ
- 	err = xdp_rxq_info_reg(&rq->xdp_rxq, rq->netdev, rq->ix);
- 	if (err < 0)
- 		goto err_rq_wq_destroy;
-@@ -578,7 +579,7 @@ err_rq_wq_destroy:
- #ifdef HAVE_NETDEV_BPF
- 	if (rq->xdp_prog)
- 		bpf_prog_put(rq->xdp_prog);
--#ifdef HAVE_NET_XDP_H
-+#ifdef HAVE_XDP_BUFF_RXQ
- 	xdp_rxq_info_unreg(&rq->xdp_rxq);
- #endif
- #endif
-@@ -595,7 +596,7 @@ static void mlx5e_free_rq(struct mlx5e_rq *rq)
- 	if (rq->xdp_prog)
- 		bpf_prog_put(rq->xdp_prog);
- 
--#ifdef HAVE_NET_XDP_H
-+#ifdef HAVE_XDP_BUFF_RXQ
- 	xdp_rxq_info_unreg(&rq->xdp_rxq);
- #endif
- #endif
-@@ -2831,7 +2832,7 @@ static int mlx5e_alloc_drop_rq(struct mlx5_core_dev *mdev,
- 	if (err)
- 		return err;
- 
--#ifdef HAVE_NET_XDP_H
-+#ifdef HAVE_XDP_BUFF_RXQ
- 	/* Mark as unused given "Drop-RQ" packets never reach XDP */
- 	xdp_rxq_info_unused(&rq->xdp_rxq);
- #endif
-@@ -3848,6 +3849,21 @@ static int mlx5e_set_vf_rate(struct net_device *dev, int vf, int min_tx_rate,
- {
- 	struct mlx5e_priv *priv = netdev_priv(dev);
- 	struct mlx5_core_dev *mdev = priv->mdev;
-+#ifdef HAVE_VF_TX_RATE
-+	struct mlx5_eswitch *esw = mdev->priv.eswitch;
-+	int min_tx_rate;
-+	int vport = vf + 1;
-+
-+	if (!esw || !MLX5_CAP_GEN(esw->dev, vport_group_manager) ||
-+	    MLX5_CAP_GEN(esw->dev, port_type) != MLX5_CAP_PORT_TYPE_ETH)
-+		return -EPERM;
-+	if (vport < 0 || vport >= esw->total_vports)
-+		return -EINVAL;
-+
-+	mutex_lock(&esw->state_lock);
-+	min_tx_rate = esw->vports[vport].info.min_rate;
-+	mutex_unlock(&esw->state_lock);
-+#endif
- 
- 	return mlx5_eswitch_set_vport_rate(mdev->priv.eswitch, vf + 1,
- 					   max_tx_rate, min_tx_rate);
-diff --git a/drivers/net/ethernet/mellanox/mlx5/core/en_rep.c b/drivers/net/ethernet/mellanox/mlx5/core/en_rep.c
-index xxxxxxx..xxxxxxx xxxxxx
---- a/drivers/net/ethernet/mellanox/mlx5/core/en_rep.c
-+++ b/drivers/net/ethernet/mellanox/mlx5/core/en_rep.c
-@@ -706,6 +706,7 @@ static int mlx5e_rep_close(struct net_device *dev)
- 	return ret;
- }
- 
-+#if defined(HAVE_NDO_GET_PHYS_PORT_NAME) || defined(HAVE_SWITCHDEV_H_COMPAT) || defined(HAVE_NDO_GET_PHYS_PORT_NAME_EXTENDED)
- static int mlx5e_rep_get_phys_port_name(struct net_device *dev,
- 					char *buf, size_t len)
- {
-@@ -720,11 +721,33 @@ static int mlx5e_rep_get_phys_port_name(struct net_device *dev,
- 
- 	return 0;
- }
-+#endif
- 
-+#if defined(HAVE_TC_FLOWER_OFFLOAD) && !defined(CONFIG_COMPAT_CLS_FLOWER_MOD)
- static int
-+#if defined(HAVE_NDO_SETUP_TC_TAKES_TC_SETUP_TYPE) || defined(HAVE_NDO_SETUP_TC_RH_EXTENDED)
-+#ifdef HAVE_TC_BLOCK_OFFLOAD
- mlx5e_rep_setup_tc_cls_flower(struct mlx5e_priv *priv,
-+#else
-+mlx5e_rep_setup_tc_cls_flower(struct net_device *dev,
-+#endif
- 			      struct tc_cls_flower_offload *cls_flower)
-+#else
-+mlx5e_rep_setup_tc_cls_flower(struct net_device *dev,
-+			      u32 handle,
-+#ifdef HAVE_NDO_SETUP_TC_TAKES_CHAIN_INDEX
-+			      u32 chain_index,
-+#endif
-+			      __be16 proto,
-+			      struct tc_to_netdev *tc)
-+#endif
- {
-+#if defined(HAVE_NDO_SETUP_TC_TAKES_TC_SETUP_TYPE) || defined(HAVE_NDO_SETUP_TC_RH_EXTENDED)
-+#ifndef HAVE_TC_BLOCK_OFFLOAD
-+	struct mlx5e_priv *priv = netdev_priv(dev);
-+#endif
-+#endif
-+
- 	switch (cls_flower->command) {
- 	case TC_CLSFLOWER_REPLACE:
- 		return mlx5e_configure_flower(priv, cls_flower);
-@@ -736,7 +759,9 @@ mlx5e_rep_setup_tc_cls_flower(struct mlx5e_priv *priv,
- 		return -EOPNOTSUPP;
- 	}
- }
-+#endif /* HAVE_TC_FLOWER_OFFLOAD */
- 
-+#ifdef HAVE_TC_BLOCK_OFFLOAD
- static int mlx5e_rep_setup_tc_cb(enum tc_setup_type type, void *type_data,
- 				 void *cb_priv)
- {
-@@ -772,17 +797,47 @@ static int mlx5e_rep_setup_tc_block(struct net_device *dev,
- 		return -EOPNOTSUPP;
- 	}
- }
-+#endif
- 
-+#if defined(HAVE_TC_FLOWER_OFFLOAD) && !defined(CONFIG_COMPAT_CLS_FLOWER_MOD)
-+#if defined(HAVE_NDO_SETUP_TC_TAKES_TC_SETUP_TYPE) || defined(HAVE_NDO_SETUP_TC_RH_EXTENDED)
- static int mlx5e_rep_setup_tc(struct net_device *dev, enum tc_setup_type type,
- 			      void *type_data)
-+#else
-+static int mlx5e_rep_setup_tc(struct net_device *dev, u32 handle,
-+#ifdef HAVE_NDO_SETUP_TC_TAKES_CHAIN_INDEX
-+			      u32 chain_index, __be16 proto,
-+#else
-+			      __be16 proto,
-+#endif
-+			      struct tc_to_netdev *tc)
-+#endif
- {
-+#if !defined(HAVE_NDO_SETUP_TC_TAKES_TC_SETUP_TYPE) && !defined(HAVE_NDO_SETUP_TC_RH_EXTENDED)
-+	unsigned int type = tc->type;
-+#endif
-+
- 	switch (type) {
-+#ifdef HAVE_TC_BLOCK_OFFLOAD
- 	case TC_SETUP_BLOCK:
- 		return mlx5e_rep_setup_tc_block(dev, type_data);
-+#else
-+	case TC_SETUP_CLSFLOWER:
-+#if defined(HAVE_NDO_SETUP_TC_TAKES_TC_SETUP_TYPE) || defined(HAVE_NDO_SETUP_TC_RH_EXTENDED)
-+		return mlx5e_rep_setup_tc_cls_flower(dev, type_data);
-+#else
-+		return mlx5e_rep_setup_tc_cls_flower(dev, handle,
-+#ifdef HAVE_NDO_SETUP_TC_TAKES_CHAIN_INDEX
-+						     chain_index,
-+#endif
-+						     proto, tc);
-+#endif
-+#endif
- 	default:
- 		return -EOPNOTSUPP;
- 	}
- }
-+#endif
- 
- bool mlx5e_is_uplink_rep(struct mlx5e_priv *priv)
- {
-@@ -801,6 +856,7 @@ bool mlx5e_is_uplink_rep(struct mlx5e_priv *priv)
- 	return false;
- }
- 
-+#if defined(NDO_HAS_OFFLOAD_STATS_GETS_NET_DEVICE) || defined(HAVE_NDO_HAS_OFFLOAD_STATS_EXTENDED)
- static bool mlx5e_is_vf_vport_rep(struct mlx5e_priv *priv)
- {
- 	struct mlx5e_rep_priv *rpriv = priv->ppriv;
-@@ -824,6 +880,7 @@ bool mlx5e_has_offload_stats(const struct net_device *dev, int attr_id)
- 
- 	return false;
- }
-+#endif
- 
- static int
- mlx5e_get_sw_stats64(const struct net_device *dev,
-@@ -869,11 +926,29 @@ static const struct net_device_ops mlx5e_netdev_ops_rep = {
- 	.ndo_open                = mlx5e_rep_open,
- 	.ndo_stop                = mlx5e_rep_close,
- 	.ndo_start_xmit          = mlx5e_xmit,
-+#ifdef HAVE_NDO_GET_PHYS_PORT_NAME
- 	.ndo_get_phys_port_name  = mlx5e_rep_get_phys_port_name,
-+#elif defined(HAVE_NDO_GET_PHYS_PORT_NAME_EXTENDED)
-+	.extended.ndo_get_phys_port_name  = mlx5e_rep_get_phys_port_name,
-+#endif
-+#if defined(HAVE_TC_FLOWER_OFFLOAD) && !defined(CONFIG_COMPAT_CLS_FLOWER_MOD)
-+#ifdef HAVE_NDO_SETUP_TC_RH_EXTENDED
-+	.extended.ndo_setup_tc_rh          = mlx5e_rep_setup_tc,
-+#else
- 	.ndo_setup_tc            = mlx5e_rep_setup_tc,
-+#endif
-+#endif
- 	.ndo_get_stats64         = mlx5e_rep_get_stats,
-+#ifdef NDO_HAS_OFFLOAD_STATS_GETS_NET_DEVICE
- 	.ndo_has_offload_stats	 = mlx5e_has_offload_stats,
-+#elif defined(HAVE_NDO_HAS_OFFLOAD_STATS_EXTENDED)
-+	.extended.ndo_has_offload_stats   = mlx5e_has_offload_stats,
-+#endif
-+#ifdef HAVE_NDO_GET_OFFLOAD_STATS
- 	.ndo_get_offload_stats	 = mlx5e_get_offload_stats,
-+#elif defined(HAVE_NDO_GET_OFFLOAD_STATS_EXTENDED)
-+	.extended.ndo_get_offload_stats   = mlx5e_get_offload_stats,
-+#endif
- };
- 
- static void mlx5e_build_rep_params(struct mlx5_core_dev *mdev,
-@@ -906,7 +981,9 @@ static void mlx5e_build_rep_netdev(struct net_device *netdev)
- 
- 	netdev->ethtool_ops	  = &mlx5e_rep_ethtool_ops;
- 
-+#ifdef CONFIG_NET_SWITCHDEV
- 	netdev->switchdev_ops = &mlx5e_rep_switchdev_ops;
-+#endif
- 
- 	netdev->features	 |= NETIF_F_VLAN_CHALLENGED | NETIF_F_HW_TC | NETIF_F_NETNS_LOCAL;
- 	netdev->hw_features      |= NETIF_F_HW_TC;
-@@ -1071,7 +1148,9 @@ mlx5e_vport_rep_load(struct mlx5_core_dev *dev, struct mlx5_eswitch_rep *rep)
- 	struct mlx5e_rep_priv *uplink_rpriv;
- 	struct mlx5e_rep_priv *rpriv;
- 	struct net_device *netdev;
-+#ifdef HAVE_TC_BLOCK_OFFLOAD
- 	struct mlx5e_priv *upriv;
-+#endif
- 	int err;
- 
- 	rpriv = kzalloc(sizeof(*rpriv), GFP_KERNEL);
-@@ -1106,11 +1185,18 @@ mlx5e_vport_rep_load(struct mlx5_core_dev *dev, struct mlx5_eswitch_rep *rep)
- 	}
- 
- 	uplink_rpriv = mlx5_eswitch_get_uplink_priv(dev->priv.eswitch, REP_ETH);
-+#ifdef HAVE_TC_SETUP_CB_EGDEV_REGISTER
- 	upriv = netdev_priv(uplink_rpriv->netdev);
-+#ifdef HAVE_TC_BLOCK_OFFLOAD
- 	err = tc_setup_cb_egdev_register(netdev, mlx5e_setup_tc_block_cb,
- 					 upriv);
-+#else
-+	err = tc_setup_cb_egdev_register(netdev, mlx5e_rep_setup_tc_cb,
-+					 upriv);
-+#endif
- 	if (err)
- 		goto err_neigh_cleanup;
-+#endif
- 
- 	err = register_netdev(netdev);
- 	if (err) {
-@@ -1122,10 +1208,17 @@ mlx5e_vport_rep_load(struct mlx5_core_dev *dev, struct mlx5_eswitch_rep *rep)
- 	return 0;
- 
- err_egdev_cleanup:
-+#ifdef HAVE_TC_SETUP_CB_EGDEV_REGISTER
-+#ifdef HAVE_TC_BLOCK_OFFLOAD
- 	tc_setup_cb_egdev_unregister(netdev, mlx5e_setup_tc_block_cb,
- 				     upriv);
-+#else
-+	tc_setup_cb_egdev_unregister(netdev, mlx5e_rep_setup_tc_cb,
-+				     upriv);
-+#endif
- 
- err_neigh_cleanup:
-+#endif
- 	mlx5e_rep_neigh_cleanup(rpriv);
- 
- err_detach_netdev:
-@@ -1145,14 +1238,23 @@ mlx5e_vport_rep_unload(struct mlx5_eswitch_rep *rep)
- 	struct mlx5e_priv *priv = netdev_priv(netdev);
- 	struct mlx5e_rep_priv *uplink_rpriv;
- 	void *ppriv = priv->ppriv;
-+#ifdef HAVE_TC_BLOCK_OFFLOAD
- 	struct mlx5e_priv *upriv;
-+#endif
- 
- 	unregister_netdev(netdev);
- 	uplink_rpriv = mlx5_eswitch_get_uplink_priv(priv->mdev->priv.eswitch,
- 						    REP_ETH);
-+#ifdef HAVE_TC_SETUP_CB_EGDEV_REGISTER
- 	upriv = netdev_priv(uplink_rpriv->netdev);
-+#ifdef HAVE_TC_BLOCK_OFFLOAD
- 	tc_setup_cb_egdev_unregister(netdev, mlx5e_setup_tc_block_cb,
- 				     upriv);
-+#else
-+	tc_setup_cb_egdev_unregister(netdev, mlx5e_rep_setup_tc_cb,
-+				     upriv);
-+#endif
-+#endif
- 	mlx5e_rep_neigh_cleanup(rpriv);
- 	mlx5e_detach_netdev(priv);
- 	mlx5e_destroy_netdev(priv);
-diff --git a/drivers/net/ethernet/mellanox/mlx5/core/en_rx.c b/drivers/net/ethernet/mellanox/mlx5/core/en_rx.c
-index xxxxxxx..xxxxxxx xxxxxx
---- a/drivers/net/ethernet/mellanox/mlx5/core/en_rx.c
-+++ b/drivers/net/ethernet/mellanox/mlx5/core/en_rx.c
-@@ -758,6 +758,7 @@ static inline void mlx5e_complete_rx_cqe(struct mlx5e_rq *rq,
- 	mlx5e_build_rx_skb(cqe, cqe_bcnt, rq, skb);
- }
- 
-+#ifdef HAVE_NETDEV_BPF
- static inline void mlx5e_xmit_xdp_doorbell(struct mlx5e_xdpsq *sq)
- {
- 	struct mlx5_wq_cyc *wq = &sq->wq;
-@@ -792,6 +793,11 @@ static inline bool mlx5e_xmit_xdp_frame(struct mlx5e_rq *rq,
- 		rq->stats.xdp_drop++;
- 		return false;
- 	}
-+#else
-+	unsigned int dma_len = len - MLX5E_XDP_MIN_INLINE;
-+	void *data           = page_address(di->page) + data_offset;
-+
-+#endif
- 
- 	if (unlikely(!mlx5e_wqc_has_room_for(wq, sq->cc, sq->pc, 1))) {
- 		if (sq->db.doorbell) {
-@@ -850,10 +856,14 @@ static inline int mlx5e_xdp_handle(struct mlx5e_rq *rq,
- 		return false;
- 
- 	xdp.data = va + *rx_headroom;
-+#ifdef HAVE_XDP_SET_DATA_META_INVALID
- 	xdp_set_data_meta_invalid(&xdp);
-+#endif
- 	xdp.data_end = xdp.data + *len;
- 	xdp.data_hard_start = va;
-+#ifdef HAVE_XDP_RXQ_INFO
- 	xdp.rxq = &rq->xdp_rxq;
-+#endif
- 
- 	act = bpf_prog_run_xdp(prog, &xdp);
- 	switch (act) {
-@@ -875,6 +885,7 @@ static inline int mlx5e_xdp_handle(struct mlx5e_rq *rq,
- 	}
- }
- 
-+#ifndef HAVE_BUILD_SKB
- static inline
- struct sk_buff *mlx5e_build_linear_skb(struct mlx5e_rq *rq, void *va,
- 				       u32 frag_size, u16 headroom,
-@@ -892,6 +903,7 @@ struct sk_buff *mlx5e_build_linear_skb(struct mlx5e_rq *rq, void *va,
- 
- 	return skb;
- }
-+#endif
- 
- static inline
- struct sk_buff *skb_from_cqe(struct mlx5e_rq *rq, struct mlx5_cqe64 *cqe,
-@@ -901,7 +913,9 @@ struct sk_buff *skb_from_cqe(struct mlx5e_rq *rq, struct mlx5_cqe64 *cqe,
- 	u16 rx_headroom = rq->buff.headroom;
- 	struct sk_buff *skb;
- 	void *va, *data;
-+#ifdef HAVE_NETDEV_BPF
- 	bool consumed;
-+#endif
- 	u32 frag_size;
- 
- 	va             = page_address(di->page) + wi->offset;
-@@ -918,19 +932,29 @@ struct sk_buff *skb_from_cqe(struct mlx5e_rq *rq, struct mlx5_cqe64 *cqe,
- 		return NULL;
- 	}
- 
-+#ifdef HAVE_NETDEV_BPF
- 	rcu_read_lock();
- 	consumed = mlx5e_xdp_handle(rq, di, va, &rx_headroom, &cqe_bcnt);
- 	rcu_read_unlock();
- 	if (consumed)
- 		return NULL; /* page/packet was consumed by XDP */
-+#endif
- 
-+#ifdef HAVE_BUILD_SKB
-+	skb = build_skb(va, frag_size);
-+#else
- 	skb = mlx5e_build_linear_skb(rq, va, frag_size, rx_headroom, cqe_bcnt);
-+#endif
- 	if (unlikely(!skb))
- 		return NULL;
- 
- 	/* queue up for recycling/reuse */
- 	page_ref_inc(di->page);
- 
-+#ifdef HAVE_BUILD_SKB
-+	skb_reserve(skb, rx_headroom);
-+	skb_put(skb, cqe_bcnt);
-+#endif
- 	return skb;
- }
- 
-@@ -1091,13 +1115,22 @@ mlx5e_skb_from_cqe_mpwrq_linear(struct mlx5e_rq *rq, struct mlx5e_mpw_info *wi,
- 		return NULL; /* page/packet was consumed by XDP */
- 	}
- 
-+#ifdef HAVE_BUILD_SKB
-+	skb = build_skb(va, frag_size);
-+#else
- 	skb = mlx5e_build_linear_skb(rq, va, frag_size, rx_headroom, cqe_bcnt32);
-+#endif
- 	if (unlikely(!skb))
- 		return NULL;
- 
- 	/* queue up for recycling/reuse */
- 	page_ref_inc(di->page);
- 
-+#ifdef HAVE_BUILD_SKB
-+	skb_reserve(skb, rx_headroom);
-+	skb_put(skb, cqe_bcnt);
-+#endif
-+
- 	return skb;
- }
- 
-@@ -1148,7 +1181,9 @@ mpwrq_cqe_out:
- int mlx5e_poll_rx_cq(struct mlx5e_cq *cq, int budget)
- {
- 	struct mlx5e_rq *rq = container_of(cq, struct mlx5e_rq, cq);
-+#ifdef HAVE_NETDEV_BPF
- 	struct mlx5e_xdpsq *xdpsq;
-+#endif
- 	struct mlx5_cqe64 *cqe;
- 	int work_done = 0;
- 
-@@ -1162,7 +1197,9 @@ int mlx5e_poll_rx_cq(struct mlx5e_cq *cq, int budget)
- 	if (!cqe)
- 		return 0;
- 
-+#ifdef HAVE_NETDEV_BPF
- 	xdpsq = &rq->xdpsq;
-+#endif
- 
- 	do {
- 		if (mlx5_get_cqe_format(cqe) == MLX5_COMPRESSED) {
-@@ -1177,10 +1214,12 @@ int mlx5e_poll_rx_cq(struct mlx5e_cq *cq, int budget)
- 		rq->handle_rx_cqe(rq, cqe);
- 	} while ((++work_done < budget) && (cqe = mlx5_cqwq_get_cqe(&cq->wq)));
- 
-+#ifdef HAVE_NETDEV_BPF
- 	if (xdpsq->db.doorbell) {
- 		mlx5e_xmit_xdp_doorbell(xdpsq);
- 		xdpsq->db.doorbell = false;
- 	}
-+#endif
- 
- 	mlx5_cqwq_update_db_record(&cq->wq);
- 
-diff --git a/drivers/net/ethernet/mellanox/mlx5/core/en_tc.c b/drivers/net/ethernet/mellanox/mlx5/core/en_tc.c
-index xxxxxxx..xxxxxxx xxxxxx
---- a/drivers/net/ethernet/mellanox/mlx5/core/en_tc.c
-+++ b/drivers/net/ethernet/mellanox/mlx5/core/en_tc.c
-@@ -1955,7 +1955,13 @@ static int parse_tc_nic_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
- 		}
- 
- 		if (is_tcf_mirred_egress_redirect(a)) {
-+#ifndef HAVE_TCF_MIRRED_DEV
-+			int ifindex = tcf_mirred_ifindex(a);
-+
-+			struct net_device *peer_dev = __dev_get_by_index(dev_net(priv->netdev), ifindex);
-+#else
- 			struct net_device *peer_dev = tcf_mirred_dev(a);
-+#endif
- 
- 			if (priv->netdev->netdev_ops == peer_dev->netdev_ops &&
- 			    same_hw_devs(priv, netdev_priv(peer_dev))) {
-@@ -2496,8 +2502,14 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
- 		if (is_tcf_mirred_egress_redirect(a)) {
- 			struct net_device *out_dev;
- 			struct mlx5e_priv *out_priv;
-+#ifndef HAVE_TCF_MIRRED_DEV
-+			int ifindex = tcf_mirred_ifindex(a);
-+
-+			out_dev = __dev_get_by_index(dev_net(priv->netdev), ifindex);
-+#else
- 
- 			out_dev = tcf_mirred_dev(a);
-+#endif
- 
- 			if (switchdev_port_same_parent_id(priv->netdev,
- 							  out_dev)) {
-@@ -2507,7 +2519,11 @@ static int parse_tc_fdb_actions(struct mlx5e_priv *priv, struct tcf_exts *exts,
- 				rpriv = out_priv->ppriv;
- 				attr->out_rep = rpriv->rep;
- 			} else if (encap) {
-+#ifndef HAVE_TCF_MIRRED_DEV
-+				parse_attr->mirred_ifindex = ifindex;
-+#else
- 				parse_attr->mirred_ifindex = out_dev->ifindex;
-+#endif
- 				parse_attr->tun_info = *info;
- 				attr->parse_attr = parse_attr;
- 				attr->action |= MLX5_FLOW_CONTEXT_ACTION_ENCAP |
-diff --git a/drivers/net/ethernet/mellanox/mlx5/core/en_txrx.c b/drivers/net/ethernet/mellanox/mlx5/core/en_txrx.c
-index xxxxxxx..xxxxxxx xxxxxx
---- a/drivers/net/ethernet/mellanox/mlx5/core/en_txrx.c
-+++ b/drivers/net/ethernet/mellanox/mlx5/core/en_txrx.c
-@@ -37,10 +37,14 @@ static inline bool mlx5e_channel_no_affinity_change(struct mlx5e_channel *c)
- {
- 	int current_cpu = smp_processor_id();
- 	const struct cpumask *aff;
-+#ifndef HAVE_IRQ_DATA_AFFINITY
- 	struct irq_data *idata;
- 
- 	idata = irq_desc_get_irq_data(c->irq_desc);
- 	aff = irq_data_get_affinity_mask(idata);
-+#else
-+	aff = irq_desc_get_irq_data(c->irq_desc)->affinity;
-+#endif
- 	return cpumask_test_cpu(current_cpu, aff);
- }
- 
-diff --git a/drivers/net/ethernet/mellanox/mlx5/core/eswitch.c b/drivers/net/ethernet/mellanox/mlx5/core/eswitch.c
-index xxxxxxx..xxxxxxx xxxxxx
---- a/drivers/net/ethernet/mellanox/mlx5/core/eswitch.c
-+++ b/drivers/net/ethernet/mellanox/mlx5/core/eswitch.c
-@@ -2211,8 +2211,10 @@ int mlx5_eswitch_get_vport_stats(struct mlx5_eswitch *esw,
- 	err = mlx5_eswitch_query_vport_drop_stats(esw->dev, vport, &stats);
- 	if (err)
- 		goto free_out;
-+#ifdef HAVE_IFLA_VF_STATS_RX_DROPPED
- 	vf_stats->rx_dropped = stats.rx_dropped;
- 	vf_stats->tx_dropped = stats.tx_dropped;
-+#endif
- 
- free_out:
- 	kvfree(out);
