@@ -1,0 +1,30 @@
+From 367d2f0787e8363f30cbac4d5270a772b69828c1 Mon Sep 17 00:00:00 2001
+From: Colin Ian King <colin.king@canonical.com>
+Date: Wed, 30 May 2018 10:40:29 +0100
+Subject: [PATCH 27/44] RDMA/qedr: fix spelling mistake: "adrresses" ->
+ "addresses"
+
+Trivial fix to spelling mistake in DP_ERR error message
+
+Signed-off-by: Colin Ian King <colin.king@canonical.com>
+Signed-off-by: Doug Ledford <dledford@redhat.com>
+---
+ drivers/infiniband/hw/qedr/verbs.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/infiniband/hw/qedr/verbs.c b/drivers/infiniband/hw/qedr/verbs.c
+index 988aace..614a954 100644
+--- a/drivers/infiniband/hw/qedr/verbs.c
++++ b/drivers/infiniband/hw/qedr/verbs.c
+@@ -414,7 +414,7 @@ int qedr_mmap(struct ib_ucontext *context, struct vm_area_struct *vma)
+ 
+ 	if ((vma->vm_start & (PAGE_SIZE - 1)) || (len & (PAGE_SIZE - 1))) {
+ 		DP_ERR(dev,
+-		       "failed mmap, adrresses must be page aligned: start=0x%pK, end=0x%pK\n",
++		       "failed mmap, addresses must be page aligned: start=0x%pK, end=0x%pK\n",
+ 		       (void *)vma->vm_start, (void *)vma->vm_end);
+ 		return -EINVAL;
+ 	}
+-- 
+2.9.5
+
