@@ -3,9 +3,9 @@ Subject: [PATCH] BACKPORT: ipoib
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
- drivers/infiniband/ulp/ipoib/ipoib_main.c    | 56 +++++++++++++++++++++++++++-
- drivers/infiniband/ulp/ipoib/ipoib_netlink.c | 31 ++++++++++++++-
- 2 files changed, 85 insertions(+), 2 deletions(-)
+ drivers/infiniband/ulp/ipoib/ipoib_main.c    | 101 ++++++++++++++++++++++++++-
+ drivers/infiniband/ulp/ipoib/ipoib_netlink.c |  31 +++++++-
+ 2 files changed, 128 insertions(+), 4 deletions(-)
 
 diff --git a/drivers/infiniband/ulp/ipoib/ipoib_main.c b/drivers/infiniband/ulp/ipoib/ipoib_main.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -47,7 +47,50 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  		if (carrier_status)
  			netif_carrier_on(dev);
-@@ -303,9 +314,21 @@ static bool ipoib_is_dev_match_addr_rcu(const struct sockaddr *addr,
+@@ -276,15 +287,42 @@ static int ipoib_change_mtu(struct net_device *dev, int new_mtu)
+ 	return ret;
+ }
+ 
++#ifdef HAVE_NDO_GET_STATS64_RET_VOID
+ static void ipoib_get_stats(struct net_device *dev,
+ 			    struct rtnl_link_stats64 *stats)
++#elif defined(HAVE_NDO_GET_STATS64)
++static struct rtnl_link_stats64 * ipoib_get_stats(struct net_device *dev,
++						  struct rtnl_link_stats64 *stats)
++#else
++static struct net_device_stats *  ipoib_get_stats(struct net_device *dev)
++#endif
+ {
+ 	struct ipoib_dev_priv *priv = ipoib_priv(dev);
+ 
++#if !defined(HAVE_NDO_GET_STATS64) && !defined(HAVE_NDO_GET_STATS64_RET_VOID)
++	struct net_device_stats *stats = &priv->ret_stats;
++#endif
++#ifdef HAVE_NDO_GET_STATS64_RET_VOID
+ 	if (priv->rn_ops->ndo_get_stats64)
+ 		priv->rn_ops->ndo_get_stats64(dev, stats);
+ 	else
+ 		netdev_stats_to_stats64(stats, &dev->stats);
++#elif defined(HAVE_NDO_GET_STATS64)
++	if (priv->rn_ops->ndo_get_stats64) {
++		return priv->rn_ops->ndo_get_stats64(dev, stats);
++	} else {
++		netdev_stats_to_stats64(stats,
++					&dev->stats);
++	return stats;
++	}
++#else
++	if (priv->rn_ops->ndo_get_stats) {
++		return priv->rn_ops->ndo_get_stats(dev);
++		} else {
++			memcpy(stats, &dev->stats, sizeof(priv->ret_stats));
++			return stats;
++		}
++#endif
+ }
+ 
+ /* Called with an RCU read lock taken */
+@@ -303,9 +341,21 @@ static bool ipoib_is_dev_match_addr_rcu(const struct sockaddr *addr,
  		if (!in_dev)
  			return false;
  
@@ -69,7 +112,25 @@ index xxxxxxx..xxxxxxx xxxxxx
  		in_dev_put(in_dev);
  		if (ret_addr)
  			return true;
-@@ -1868,6 +1891,7 @@ static int ipoib_get_vf_config(struct net_device *dev, int vf,
+@@ -707,7 +757,7 @@ static void push_pseudo_header(struct sk_buff *skb, const char *daddr)
+ {
+ 	struct ipoib_pseudo_header *phdr;
+ 
+-	phdr = skb_push(skb, sizeof(*phdr));
++	phdr = (struct ipoib_pseudo_header *)skb_push(skb, sizeof(*phdr));
+ 	memcpy(phdr->hwaddr, daddr, INFINIBAND_ALEN);
+ }
+ 
+@@ -1202,7 +1252,7 @@ static int ipoib_hard_header(struct sk_buff *skb,
+ {
+ 	struct ipoib_header *header;
+ 
+-	header = skb_push(skb, sizeof *header);
++	header = (struct ipoib_header *)skb_push(skb, sizeof *header);
+ 
+ 	header->proto = htons(type);
+ 	header->reserved = 0;
+@@ -1868,6 +1918,7 @@ static int ipoib_get_vf_config(struct net_device *dev, int vf,
  	return 0;
  }
  
@@ -77,7 +138,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  static int ipoib_set_vf_guid(struct net_device *dev, int vf, u64 guid, int type)
  {
  	struct ipoib_dev_priv *priv = ipoib_priv(dev);
-@@ -1877,6 +1901,7 @@ static int ipoib_set_vf_guid(struct net_device *dev, int vf, u64 guid, int type)
+@@ -1877,6 +1928,7 @@ static int ipoib_set_vf_guid(struct net_device *dev, int vf, u64 guid, int type)
  
  	return ib_set_vf_guid(priv->ca, vf, priv->port, guid, type);
  }
@@ -85,7 +146,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  static int ipoib_get_vf_stats(struct net_device *dev, int vf,
  			      struct ifla_vf_stats *vf_stats)
-@@ -1894,7 +1919,11 @@ static const struct net_device_ops ipoib_netdev_ops_pf = {
+@@ -1894,7 +1946,11 @@ static const struct net_device_ops ipoib_netdev_ops_pf = {
  	.ndo_uninit		 = ipoib_uninit,
  	.ndo_open		 = ipoib_open,
  	.ndo_stop		 = ipoib_stop,
@@ -97,7 +158,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	.ndo_fix_features	 = ipoib_fix_features,
  	.ndo_start_xmit		 = ipoib_start_xmit,
  	.ndo_tx_timeout		 = ipoib_timeout,
-@@ -1903,7 +1932,9 @@ static const struct net_device_ops ipoib_netdev_ops_pf = {
+@@ -1903,24 +1959,46 @@ static const struct net_device_ops ipoib_netdev_ops_pf = {
  	.ndo_set_vf_link_state	 = ipoib_set_vf_link_state,
  	.ndo_get_vf_config	 = ipoib_get_vf_config,
  	.ndo_get_vf_stats	 = ipoib_get_vf_stats,
@@ -105,9 +166,18 @@ index xxxxxxx..xxxxxxx xxxxxx
  	.ndo_set_vf_guid	 = ipoib_set_vf_guid,
 +#endif
  	.ndo_set_mac_address	 = ipoib_set_mac,
++#if defined(HAVE_NDO_GET_STATS64) || defined(HAVE_NDO_GET_STATS64_RET_VOID)
  	.ndo_get_stats64	 = ipoib_get_stats,
++#else
++	.ndo_get_stats           = ipoib_get_stats,
++#endif
  	.ndo_do_ioctl		 = ipoib_ioctl,
-@@ -1913,7 +1944,13 @@ static const struct net_device_ops ipoib_netdev_ops_vf = {
++#ifdef HAVE_NET_DEVICE_OPS_EXTENDED
++	.ndo_size = sizeof(struct net_device_ops),
++#endif
+ };
+ 
+ static const struct net_device_ops ipoib_netdev_ops_vf = {
  	.ndo_uninit		 = ipoib_uninit,
  	.ndo_open		 = ipoib_open,
  	.ndo_stop		 = ipoib_stop,
@@ -121,7 +191,21 @@ index xxxxxxx..xxxxxxx xxxxxx
  	.ndo_fix_features	 = ipoib_fix_features,
  	.ndo_start_xmit	 	 = ipoib_start_xmit,
  	.ndo_tx_timeout		 = ipoib_timeout,
-@@ -1985,9 +2022,16 @@ static struct net_device
+ 	.ndo_set_rx_mode	 = ipoib_set_mcast_list,
+ 	.ndo_get_iflink		 = ipoib_get_iflink,
++#if defined(HAVE_NDO_GET_STATS64) || defined(HAVE_NDO_GET_STATS64_RET_VOID)
+ 	.ndo_get_stats64	 = ipoib_get_stats,
++#else
++	.ndo_get_stats           = ipoib_get_stats,
++#endif
+ 	.ndo_do_ioctl		 = ipoib_ioctl,
++#ifdef HAVE_NET_DEVICE_OPS_EXTENDED
++	.ndo_size = sizeof(struct net_device_ops),
++#endif
+ };
+ 
+ void ipoib_setup_common(struct net_device *dev)
+@@ -1985,9 +2063,16 @@ static struct net_device
  	struct net_device *dev;
  	struct rdma_netdev *rn;
  
@@ -138,7 +222,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	if (!dev)
  		return NULL;
  
-@@ -2012,14 +2056,22 @@ static struct net_device *ipoib_get_netdev(struct ib_device *hca, u8 port,
+@@ -2012,14 +2097,22 @@ static struct net_device *ipoib_get_netdev(struct ib_device *hca, u8 port,
  	if (hca->alloc_rdma_netdev) {
  		dev = hca->alloc_rdma_netdev(hca, port,
  					     RDMA_NETDEV_IPOIB, name,
@@ -161,7 +245,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  						  ipoib_setup_common);
  
  	return dev;
-@@ -2262,7 +2314,9 @@ static struct net_device *ipoib_add_port(const char *format,
+@@ -2262,7 +2355,9 @@ static struct net_device *ipoib_add_port(const char *format,
  	/* MTU will be reset when mcast join happens */
  	priv->dev->mtu  = IPOIB_UD_MTU(priv->max_ib_mtu);
  	priv->mcast_mtu  = priv->admin_mtu = priv->dev->mtu;

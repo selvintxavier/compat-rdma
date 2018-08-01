@@ -3,7 +3,7 @@ Subject: [PATCH] BACKPORT: ib_core
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
- drivers/infiniband/core/addr.c          |  15 ++++
+ drivers/infiniband/core/addr.c          |  18 +++-
  drivers/infiniband/core/cma.c           |  27 ++++++
  drivers/infiniband/core/cma_configfs.c  |  93 ++++++++++++++++++++
  drivers/infiniband/core/core_priv.h     |   9 ++
@@ -26,7 +26,7 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  include/rdma/ib_verbs.h                 | 147 ++++++++++++++++++++++++++++++++
  include/rdma/rdma_netlink.h             |   4 +
  include/rdma/restrack.h                 |   3 +
- 23 files changed, 711 insertions(+), 1 deletion(-)
+ 23 files changed, 713 insertions(+), 2 deletions(-)
 
 diff --git a/drivers/infiniband/core/addr.c b/drivers/infiniband/core/addr.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -59,6 +59,16 @@ index xxxxxxx..xxxxxxx xxxxxx
  		return -EPERM;
  
  	if (ib_nl_is_good_ip_resp(nlh))
+@@ -178,7 +193,8 @@ static int ib_nl_ip_send_msg(struct rdma_dev_addr *dev_addr,
+ 	}
+ 
+ 	/* Construct the family header first */
+-	header = skb_put(skb, NLMSG_ALIGN(sizeof(*header)));
++	header = (struct rdma_ls_ip_resolve_header *)
++		skb_put(skb, NLMSG_ALIGN(sizeof(*header)));
+ 	header->ifindex = dev_addr->bound_dev_if;
+ 	nla_put(skb, attrtype, size, daddr);
+ 
 diff --git a/drivers/infiniband/core/cma.c b/drivers/infiniband/core/cma.c
 index xxxxxxx..xxxxxxx xxxxxx
 --- a/drivers/infiniband/core/cma.c
