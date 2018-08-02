@@ -225,7 +225,7 @@ fi
 # Compat stuff
 COMPAT="compat"
 # mkdir -p $COMPAT include/{linux,net,scsi}
-mkdir -p $COMPAT include/{linux,net}
+mkdir -p $COMPAT include/{linux,net,uapi}
 echo "Copying $GIT_COMPAT_TREE/ files..."
 cp $GIT_COMPAT_TREE/compat/*.[ch] $COMPAT/
 cp $GIT_COMPAT_TREE/compat/Makefile $COMPAT/
@@ -239,6 +239,7 @@ cp -a $GIT_COMPAT_TREE/scripts/ $COMPAT/
 cp -a $GIT_COMPAT_TREE/include/linux/* include/linux/
 cp -a $GIT_COMPAT_TREE/include/net/* include/net/
 cp -a $GIT_COMPAT_TREE/include/scsi/* include/scsi/
+cp -a $GIT_COMPAT_TREE/include/uapi/* include/uapi/
 rm -f $COMPAT/*.mod.c
 
 # Stable pending, if -n was passed
