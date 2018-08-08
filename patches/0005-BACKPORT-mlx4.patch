@@ -1,17 +1,17 @@
 From: Vladimir Sokolovsky <vlad@mellanox.com>
-Subject: [PATCH] mlx4
+Subject: [PATCH] BACKPORT: mlx4
 
 Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
  drivers/net/ethernet/mellanox/mlx4/catas.c       |  17 +
  drivers/net/ethernet/mellanox/mlx4/en_dcb_nl.c   |  29 ++
  drivers/net/ethernet/mellanox/mlx4/en_ethtool.c  |   8 +
- drivers/net/ethernet/mellanox/mlx4/en_netdev.c   | 378 ++++++++++++++++++++++-
- drivers/net/ethernet/mellanox/mlx4/en_rx.c       |  66 +++-
+ drivers/net/ethernet/mellanox/mlx4/en_netdev.c   | 426 ++++++++++++++++++++++-
+ drivers/net/ethernet/mellanox/mlx4/en_rx.c       |  70 +++-
  drivers/net/ethernet/mellanox/mlx4/en_selftest.c |   4 +-
  drivers/net/ethernet/mellanox/mlx4/main.c        |   2 +
  drivers/net/ethernet/mellanox/mlx4/mlx4_en.h     |  12 +
- 8 files changed, 508 insertions(+), 8 deletions(-)
+ 8 files changed, 560 insertions(+), 8 deletions(-)
 
 diff --git a/drivers/net/ethernet/mellanox/mlx4/catas.c b/drivers/net/ethernet/mellanox/mlx4/catas.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -709,9 +709,65 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	ret = mlx4_SET_PORT_VXLAN(priv->mdev->dev, priv->port,
  				  VXLAN_STEER_BY_OUTER_MAC, 0);
-@@ -2741,12 +2904,19 @@ static void mlx4_en_del_vxlan_port(struct  net_device *dev,
+@@ -2689,6 +2852,8 @@ static void mlx4_en_del_vxlan_offloads(struct work_struct *work)
+ 	priv->vxlan_port = 0;
+ }
+ 
++#ifdef HAVE_KERNEL_WITH_VXLAN_SUPPORT_ON
++#if defined(HAVE_NDO_UDP_TUNNEL_ADD) || defined(HAVE_NDO_UDP_TUNNEL_ADD_EXTENDED)
+ static void mlx4_en_add_vxlan_port(struct  net_device *dev,
+ 				   struct udp_tunnel_info *ti)
+ {
+@@ -2740,13 +2905,66 @@ static void mlx4_en_del_vxlan_port(struct  net_device *dev,
+ 
  	queue_work(priv->mdev->workqueue, &priv->vxlan_del_task);
  }
++#elif defined(HAVE_NDO_ADD_VXLAN_PORT)
++static void mlx4_en_add_vxlan_port(struct  net_device *dev,
++				   sa_family_t sa_family, __be16 port)
++{
++	struct mlx4_en_priv *priv = netdev_priv(dev);
++	__be16 current_port;
++
++	if (priv->mdev->dev->caps.tunnel_offload_mode != MLX4_TUNNEL_OFFLOAD_MODE_VXLAN)
++		return;
++
++	if (sa_family == AF_INET6)
++		return;
++
++	current_port = priv->vxlan_port;
++	if (current_port && current_port != port) {
++		en_warn(priv, "vxlan port %d configured, can't add port %d\n",
++			ntohs(current_port), ntohs(port));
++		return;
++	}
++
++	priv->vxlan_port = port;
++	queue_work(priv->mdev->workqueue, &priv->vxlan_add_task);
++}
++
++static void mlx4_en_del_vxlan_port(struct  net_device *dev,
++				   sa_family_t sa_family, __be16 port)
++{
++	struct mlx4_en_priv *priv = netdev_priv(dev);
++	__be16 current_port;
++
++	if (priv->mdev->dev->caps.tunnel_offload_mode != MLX4_TUNNEL_OFFLOAD_MODE_VXLAN)
++		return;
++
++	if (sa_family == AF_INET6)
++		return;
++
++	current_port = priv->vxlan_port;
++	if (current_port != port) {
++		en_dbg(DRV, priv, "vxlan port %d isn't configured, ignoring\n", ntohs(port));
++		return;
++	}
++
++	queue_work(priv->mdev->workqueue, &priv->vxlan_del_task);
++}
++#endif
++#endif /* HAVE_KERNEL_WITH_VXLAN_SUPPORT_ON */
  
 +#ifdef HAVE_NETDEV_FEATURES_T
  static netdev_features_t mlx4_en_features_check(struct sk_buff *skb,
@@ -729,7 +785,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	/* The ConnectX-3 doesn't support outer IPv6 checksums but it does
  	 * support inner IPv6 checksums and segmentation so  we need to
-@@ -2765,6 +2935,7 @@ static netdev_features_t mlx4_en_features_check(struct sk_buff *skb,
+@@ -2765,6 +2983,7 @@ static netdev_features_t mlx4_en_features_check(struct sk_buff *skb,
  	return features;
  }
  
@@ -737,7 +793,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  static int mlx4_en_set_tx_maxrate(struct net_device *dev, int queue_index, u32 maxrate)
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
-@@ -2791,7 +2962,9 @@ static int mlx4_en_set_tx_maxrate(struct net_device *dev, int queue_index, u32 m
+@@ -2791,7 +3010,9 @@ static int mlx4_en_set_tx_maxrate(struct net_device *dev, int queue_index, u32 m
  			     &params);
  	return err;
  }
@@ -747,7 +803,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  static int mlx4_xdp_set(struct net_device *dev, struct bpf_prog *prog)
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
-@@ -2855,7 +3028,11 @@ static int mlx4_xdp_set(struct net_device *dev, struct bpf_prog *prog)
+@@ -2855,7 +3076,11 @@ static int mlx4_xdp_set(struct net_device *dev, struct bpf_prog *prog)
  		en_warn(priv, "Reducing the number of TX rings, to not exceed the max total rings number.\n");
  	}
  
@@ -759,7 +815,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	if (err) {
  		if (prog)
  			bpf_prog_sub(prog, priv->rx_ring_num - 1);
-@@ -2896,6 +3073,7 @@ out:
+@@ -2896,6 +3121,7 @@ out:
  	return err;
  }
  
@@ -767,7 +823,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  static u32 mlx4_xdp_query(struct net_device *dev)
  {
  	struct mlx4_en_priv *priv = netdev_priv(dev);
-@@ -2916,6 +3094,14 @@ static u32 mlx4_xdp_query(struct net_device *dev)
+@@ -2916,6 +3142,14 @@ static u32 mlx4_xdp_query(struct net_device *dev)
  
  	return prog_id;
  }
@@ -782,7 +838,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  static int mlx4_xdp(struct net_device *dev, struct netdev_bpf *xdp)
  {
-@@ -2923,24 +3109,40 @@ static int mlx4_xdp(struct net_device *dev, struct netdev_bpf *xdp)
+@@ -2923,24 +3157,40 @@ static int mlx4_xdp(struct net_device *dev, struct netdev_bpf *xdp)
  	case XDP_SETUP_PROG:
  		return mlx4_xdp_set(dev, xdp->prog);
  	case XDP_QUERY_PROG:
@@ -823,7 +879,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	.ndo_do_ioctl		= mlx4_en_ioctl,
  	.ndo_tx_timeout		= mlx4_en_tx_timeout,
  	.ndo_vlan_rx_add_vid	= mlx4_en_vlan_rx_add_vid,
-@@ -2948,21 +3150,73 @@ static const struct net_device_ops mlx4_netdev_ops = {
+@@ -2948,21 +3198,73 @@ static const struct net_device_ops mlx4_netdev_ops = {
  #ifdef CONFIG_NET_POLL_CONTROLLER
  	.ndo_poll_controller	= mlx4_en_netpoll,
  #endif
@@ -897,7 +953,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	.ndo_open		= mlx4_en_open,
  	.ndo_stop		= mlx4_en_close,
  	.ndo_start_xmit		= mlx4_en_xmit,
-@@ -2971,12 +3225,20 @@ static const struct net_device_ops mlx4_netdev_ops_master = {
+@@ -2971,12 +3273,20 @@ static const struct net_device_ops mlx4_netdev_ops_master = {
  	.ndo_set_rx_mode	= mlx4_en_set_rx_mode,
  	.ndo_set_mac_address	= mlx4_en_set_mac,
  	.ndo_validate_addr	= eth_validate_addr,
@@ -918,7 +974,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	.ndo_set_vf_rate	= mlx4_en_set_vf_rate,
  	.ndo_set_vf_spoofchk	= mlx4_en_set_vf_spoofchk,
  	.ndo_set_vf_link_state	= mlx4_en_set_vf_link_state,
-@@ -2987,16 +3249,47 @@ static const struct net_device_ops mlx4_netdev_ops_master = {
+@@ -2987,16 +3297,47 @@ static const struct net_device_ops mlx4_netdev_ops_master = {
  #endif
  	.ndo_set_features	= mlx4_en_set_features,
  	.ndo_fix_features	= mlx4_en_fix_features,
@@ -966,7 +1022,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  };
  
  struct mlx4_en_bond {
-@@ -3424,24 +3717,35 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -3424,24 +3765,35 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  	netif_set_real_num_tx_queues(dev, priv->tx_ring_num[TX]);
  	netif_set_real_num_rx_queues(dev, priv->rx_ring_num);
  
@@ -1002,7 +1058,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	if (!(mdev->dev->caps.flags2 & MLX4_DEV_CAP_FLAG2_SKIP_OUTER_VLAN)) {
  		dev->features |= NETIF_F_HW_VLAN_STAG_RX |
  			NETIF_F_HW_VLAN_STAG_FILTER;
-@@ -3475,45 +3779,93 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
+@@ -3475,45 +3827,93 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
  		      MLX4_DEV_CAP_FLAG2_SKIP_OUTER_VLAN))
  			dev->hw_features |= NETIF_F_HW_VLAN_STAG_TX;
  	}
@@ -1096,7 +1152,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	mdev->pndev[port] = dev;
  	mdev->upper[port] = NULL;
-@@ -3599,8 +3951,12 @@ int mlx4_en_reset_config(struct net_device *dev,
+@@ -3599,8 +3999,12 @@ int mlx4_en_reset_config(struct net_device *dev,
  
  	if (priv->hwtstamp_config.tx_type == ts_config.tx_type &&
  	    priv->hwtstamp_config.rx_filter == ts_config.rx_filter &&
@@ -1109,7 +1165,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		return 0; /* Nothing to change */
  
  	if (DEV_FEATURE_CHANGED(dev, features, NETIF_F_HW_VLAN_CTAG_RX) &&
-@@ -3619,7 +3975,11 @@ int mlx4_en_reset_config(struct net_device *dev,
+@@ -3619,7 +4023,11 @@ int mlx4_en_reset_config(struct net_device *dev,
  	memcpy(&new_prof, priv->prof, sizeof(struct mlx4_en_port_profile));
  	memcpy(&new_prof.hwtstamp_config, &ts_config, sizeof(ts_config));
  
@@ -1121,7 +1177,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	if (err)
  		goto out;
  
-@@ -3639,18 +3999,26 @@ int mlx4_en_reset_config(struct net_device *dev,
+@@ -3639,18 +4047,26 @@ int mlx4_en_reset_config(struct net_device *dev,
  		/* RX time-stamping is OFF, update the RX vlan offload
  		 * to the latest wanted state
  		 */
@@ -1217,7 +1273,19 @@ index xxxxxxx..xxxxxxx xxxxxx
  	mlx4_free_hwq_res(mdev->dev, &ring->wqres, size * stride + TXBB_SIZE);
  	kvfree(ring->rx_info);
  	ring->rx_info = NULL;
-@@ -657,11 +671,17 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
+@@ -510,7 +524,11 @@ static int mlx4_en_complete_rx_desc(struct mlx4_en_priv *priv,
+ 			dma_unmap_page(priv->ddev, dma, PAGE_SIZE, priv->dma_dir);
+ 			frags->page = NULL;
+ 		} else {
++#ifdef HAVE_PAGE_REF_COUNT_ADD_SUB_INC
+ 			page_ref_inc(page);
++#else
++			atomic_inc(&frags->page->_count);
++#endif
+ 		}
+ 
+ 		nr++;
+@@ -657,11 +675,17 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
  	struct mlx4_en_priv *priv = netdev_priv(dev);
  	int factor = priv->cqe_factor;
  	struct mlx4_en_rx_ring *ring;
@@ -1235,7 +1303,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	int polled = 0;
  	int index;
  
-@@ -670,11 +690,15 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
+@@ -670,11 +694,15 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
  
  	ring = priv->rx_ring[cq_ring];
  
@@ -1251,7 +1319,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  	/* We assume a 1:1 mapping between CQEs and Rx descriptors, so Rx
  	 * descriptor offset can be deduced from the CQE index instead of
-@@ -757,9 +781,12 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
+@@ -757,9 +785,12 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
  		/* A bpf program gets first chance to drop the packet. It may
  		 * read bytes but not past the end of the frag.
  		 */
@@ -1264,7 +1332,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  			u32 act;
  
  			dma = frags[0].dma + frags[0].page_offset;
-@@ -767,20 +794,29 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
+@@ -767,20 +798,29 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
  						priv->frag_info[0].frag_size,
  						DMA_FROM_DEVICE);
  
@@ -1294,7 +1362,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  			switch (act) {
  			case XDP_PASS:
-@@ -792,18 +828,23 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
+@@ -792,18 +832,23 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
  					frags[0].page = NULL;
  					goto next;
  				}
@@ -1318,7 +1386,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  		ring->bytes += length;
  		ring->packets++;
-@@ -885,13 +926,17 @@ next:
+@@ -885,13 +930,17 @@ next:
  			break;
  	}
  
@@ -1336,7 +1404,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  		mlx4_cq_set_ci(&cq->mcq);
  		wmb(); /* ensure HW sees CQ consumer before we post new buffers */
-@@ -940,7 +985,9 @@ int mlx4_en_poll_rx_cq(struct napi_struct *napi, int budget)
+@@ -940,7 +989,9 @@ int mlx4_en_poll_rx_cq(struct napi_struct *napi, int budget)
  	/* If we used up all the quota - we're probably not done yet... */
  	if (done == budget || !clean_complete) {
  		const struct cpumask *aff;
@@ -1346,7 +1414,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  		int cpu_curr;
  
  		/* in case we got here because of !clean_complete */
-@@ -949,8 +996,12 @@ int mlx4_en_poll_rx_cq(struct napi_struct *napi, int budget)
+@@ -949,8 +1000,12 @@ int mlx4_en_poll_rx_cq(struct napi_struct *napi, int budget)
  		INC_PERF_COUNTER(priv->pstats.napi_quota);
  
  		cpu_curr = smp_processor_id();
@@ -1359,7 +1427,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  		if (likely(cpumask_test_cpu(cpu_curr, aff)))
  			return budget;
-@@ -965,8 +1016,18 @@ int mlx4_en_poll_rx_cq(struct napi_struct *napi, int budget)
+@@ -965,8 +1020,18 @@ int mlx4_en_poll_rx_cq(struct napi_struct *napi, int budget)
  			done--;
  	}
  	/* Done for now */
@@ -1378,7 +1446,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	return done;
  }
  
-@@ -976,6 +1037,7 @@ void mlx4_en_calc_rx_buf(struct net_device *dev)
+@@ -976,6 +1041,7 @@ void mlx4_en_calc_rx_buf(struct net_device *dev)
  	int eff_mtu = MLX4_EN_EFF_MTU(dev->mtu);
  	int i = 0;
  
@@ -1386,7 +1454,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	/* bpf requires buffers to be set up as 1 packet per page.
  	 * This only works when num_frags == 1.
  	 */
-@@ -988,7 +1050,9 @@ void mlx4_en_calc_rx_buf(struct net_device *dev)
+@@ -988,7 +1054,9 @@ void mlx4_en_calc_rx_buf(struct net_device *dev)
  		priv->dma_dir = PCI_DMA_BIDIRECTIONAL;
  		priv->rx_headroom = XDP_PACKET_HEADROOM;
  		i = 1;
