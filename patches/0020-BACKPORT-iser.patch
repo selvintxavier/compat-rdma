@@ -1,0 +1,155 @@
+From: Vladimir Sokolovsky <vlad@mellanox.com>
+Subject: [PATCH] BACKPORT: iser
+
+Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
+---
+ drivers/infiniband/ulp/iser/iscsi_iser.c  |  8 +++++
+ drivers/infiniband/ulp/iser/iser_memory.c | 54 ++++++++++++++++++++++++++++++-
+ 2 files changed, 61 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/infiniband/ulp/iser/iscsi_iser.c b/drivers/infiniband/ulp/iser/iscsi_iser.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/infiniband/ulp/iser/iscsi_iser.c
++++ b/drivers/infiniband/ulp/iser/iscsi_iser.c
+@@ -1001,10 +1001,16 @@ static struct scsi_host_template iscsi_iser_sht = {
+ 	.module                 = THIS_MODULE,
+ 	.name                   = "iSCSI Initiator over iSER",
+ 	.queuecommand           = iscsi_queuecommand,
++#ifdef HAVE_SCSI_CHANGE_QUEUE_DEPTH
+ 	.change_queue_depth	= scsi_change_queue_depth,
++#else
++	.change_queue_depth	= iscsi_change_queue_depth,
++#endif
+ 	.sg_tablesize           = ISCSI_ISER_DEF_SG_TABLESIZE,
+ 	.cmd_per_lun            = ISER_DEF_CMD_PER_LUN,
++#ifdef HAVE_ISCSI_EH_CMD_TIMED_OUT
+ 	.eh_timed_out		= iscsi_eh_cmd_timed_out,
++#endif
+ 	.eh_abort_handler       = iscsi_eh_abort,
+ 	.eh_device_reset_handler= iscsi_eh_device_reset,
+ 	.eh_target_reset_handler = iscsi_eh_recover_target,
+@@ -1013,7 +1019,9 @@ static struct scsi_host_template iscsi_iser_sht = {
+ 	.slave_alloc            = iscsi_iser_slave_alloc,
+ 	.proc_name              = "iscsi_iser",
+ 	.this_id                = -1,
++#ifdef HAVE_SCSI_HOST_TEMPLATE_TRACK_QUEUE_DEPTH
+ 	.track_queue_depth	= 1,
++#endif
+ };
+ 
+ static struct iscsi_transport iscsi_iser_transport = {
+diff --git a/drivers/infiniband/ulp/iser/iser_memory.c b/drivers/infiniband/ulp/iser/iser_memory.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/infiniband/ulp/iser/iser_memory.c
++++ b/drivers/infiniband/ulp/iser/iser_memory.c
+@@ -310,8 +310,13 @@ iser_set_dif_domain(struct scsi_cmnd *sc, struct ib_sig_attrs *sig_attrs,
+ 		    struct ib_sig_domain *domain)
+ {
+ 	domain->sig_type = IB_SIG_TYPE_T10_DIF;
++#ifdef HAVE_SCSI_CMND_PROT_FLAGS
+ 	domain->sig.dif.pi_interval = scsi_prot_interval(sc);
+ 	domain->sig.dif.ref_tag = scsi_prot_ref_tag(sc);
++#else
++	domain->sig.dif.pi_interval = sc->device->sector_size;
++	domain->sig.dif.ref_tag = scsi_get_lba(sc) & 0xffffffff;
++#endif
+ 	/*
+ 	 * At the moment we hard code those, but in the future
+ 	 * we will take them from sc.
+@@ -319,9 +324,15 @@ iser_set_dif_domain(struct scsi_cmnd *sc, struct ib_sig_attrs *sig_attrs,
+ 	domain->sig.dif.apptag_check_mask = 0xffff;
+ 	domain->sig.dif.app_escape = true;
+ 	domain->sig.dif.ref_escape = true;
++#ifdef HAVE_SCSI_CMND_PROT_FLAGS
+ 	if (sc->prot_flags & SCSI_PROT_REF_INCREMENT)
+ 		domain->sig.dif.ref_remap = true;
+-};
++#else
++	if (scsi_get_prot_type(sc) == SCSI_PROT_DIF_TYPE1 ||
++		scsi_get_prot_type(sc) == SCSI_PROT_DIF_TYPE2)
++		domain->sig.dif.ref_remap = true;
++#endif
++}
+ 
+ static int
+ iser_set_sig_attrs(struct scsi_cmnd *sc, struct ib_sig_attrs *sig_attrs)
+@@ -337,16 +348,26 @@ iser_set_sig_attrs(struct scsi_cmnd *sc, struct ib_sig_attrs *sig_attrs)
+ 	case SCSI_PROT_WRITE_STRIP:
+ 		sig_attrs->wire.sig_type = IB_SIG_TYPE_NONE;
+ 		iser_set_dif_domain(sc, sig_attrs, &sig_attrs->mem);
++#ifdef HAVE_SCSI_CMND_PROT_FLAGS
+ 		sig_attrs->mem.sig.dif.bg_type = sc->prot_flags & SCSI_PROT_IP_CHECKSUM ?
+ 						IB_T10DIF_CSUM : IB_T10DIF_CRC;
++#else
++		sig_attrs->mem.sig.dif.bg_type = iser_pi_guard ? IB_T10DIF_CSUM :
++						IB_T10DIF_CRC;
++#endif
+ 		break;
+ 	case SCSI_PROT_READ_PASS:
+ 	case SCSI_PROT_WRITE_PASS:
+ 		iser_set_dif_domain(sc, sig_attrs, &sig_attrs->wire);
+ 		sig_attrs->wire.sig.dif.bg_type = IB_T10DIF_CRC;
+ 		iser_set_dif_domain(sc, sig_attrs, &sig_attrs->mem);
++#ifdef HAVE_SCSI_CMND_PROT_FLAGS
+ 		sig_attrs->mem.sig.dif.bg_type = sc->prot_flags & SCSI_PROT_IP_CHECKSUM ?
+ 						IB_T10DIF_CSUM : IB_T10DIF_CRC;
++#else
++		sig_attrs->mem.sig.dif.bg_type = iser_pi_guard ? IB_T10DIF_CSUM :
++						IB_T10DIF_CRC;
++#endif
+ 		break;
+ 	default:
+ 		iser_err("Unsupported PI operation %d\n",
+@@ -357,6 +378,7 @@ iser_set_sig_attrs(struct scsi_cmnd *sc, struct ib_sig_attrs *sig_attrs)
+ 	return 0;
+ }
+ 
++#ifdef HAVE_SCSI_CMND_PROT_FLAGS
+ static inline void
+ iser_set_prot_checks(struct scsi_cmnd *sc, u8 *mask)
+ {
+@@ -366,6 +388,30 @@ iser_set_prot_checks(struct scsi_cmnd *sc, u8 *mask)
+ 	if (sc->prot_flags & SCSI_PROT_GUARD_CHECK)
+ 		*mask |= ISER_CHECK_GUARD;
+ }
++#else
++static int
++iser_set_prot_checks(struct scsi_cmnd *sc, u8 *mask)
++{
++	switch (scsi_get_prot_type(sc)) {
++	case SCSI_PROT_DIF_TYPE0:
++		*mask = 0x0;
++		break;
++	case SCSI_PROT_DIF_TYPE1:
++	case SCSI_PROT_DIF_TYPE2:
++		*mask = ISER_CHECK_GUARD | ISER_CHECK_REFTAG;
++		break;
++	case SCSI_PROT_DIF_TYPE3:
++		*mask = ISER_CHECK_GUARD;
++		break;
++	default:
++		iser_err("Unsupported protection type %d\n",
++			 scsi_get_prot_type(sc));
++		return -EINVAL;
++	}
++
++	return 0;
++}
++#endif
+ 
+ static inline void
+ iser_inv_rkey(struct ib_send_wr *inv_wr,
+@@ -398,7 +444,13 @@ iser_reg_sig_mr(struct iscsi_iser_task *iser_task,
+ 	if (ret)
+ 		goto err;
+ 
++#ifdef HAVE_SCSI_CMND_PROT_FLAGS
+ 	iser_set_prot_checks(iser_task->sc, &sig_attrs->check_mask);
++#else
++	ret = iser_set_prot_checks(iser_task->sc, &sig_attrs->check_mask);
++	if (ret)
++		goto err;
++#endif
+ 
+ 	if (pi_ctx->sig_mr_valid)
+ 		iser_inv_rkey(iser_tx_next_wr(tx_desc), mr, cqe);
