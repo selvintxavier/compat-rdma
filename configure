@@ -199,14 +199,12 @@ usage()
 	--with-qedr-mod    make CONFIG_INFINIBAND_QEDR [no]
 	--without-qedr-mod    [yes]
 
-	--with-nvme-mod    make CONFIG_NVME_CORE=m [no]
-	--without-nvme-mod    [yes]
-
-	--with-nvme-host-mod    make CONFIG_NVME_CORE=m [no]
-	--without-nvme-host-mod    [yes]
-
-	--with-nvme-target-mod    make CONFIG_NVME_TARGET_RDMA=m [no]
-	--without-nvme-target-mod    [yes]
+	--with-nvme_host-mod
+	--without-nvme_host-mod
+	--with-nvme_host-without-fc
+	--without-nvme_host-without-fc
+	--with-nvme_target-mod
+	--without-nvme_target-mod
 
 	--help - print out options
 
@@ -759,7 +757,68 @@ main()
 			--without-bnxt_en-mod)
 				CONFIG_BNXT=
 				;;
-
+			--with-nvme_host-mod)
+				CONFIG_NVME_CORE="m"
+				CONFIG_BLK_DEV_NVME="m"
+				CONFIG_NVME_FABRICS="m"
+				CONFIG_NVME_FC="m"
+				CONFIG_NVME_RDMA="m"
+				CONFIG_NVME_MULTIPATH=
+				CONFIG_NVME_HOST_WITHOUT_FC=
+				;;
+			--without-nvme_host-mod)
+				CONFIG_NVME_CORE=
+				CONFIG_BLK_DEV_NVME=
+				CONFIG_NVME_FABRICS=
+				CONFIG_NVME_FC=
+				CONFIG_NVME_RDMA=
+				CONFIG_NVME_MULTIPATH=
+				CONFIG_NVME_HOST_WITHOUT_FC=
+				;;
+			--with-nvme_host-without-fc)
+				CONFIG_NVME_HOST_WITHOUT_FC="m"
+				CONFIG_NVME_CORE="m"
+				CONFIG_BLK_DEV_NVME="m"
+				CONFIG_NVME_FABRICS="m"
+				CONFIG_NVME_FC=
+				CONFIG_NVME_RDMA="m"
+				CONFIG_NVME_MULTIPATH=
+				CONFIG_NVME_TARGET=
+				CONFIG_NVME_TARGET_LOOP=
+				CONFIG_NVME_TARGET_RDMA=
+				CONFIG_NVME_TARGET_FC=
+				CONFIG_NVME_TARGET_FCLOOP=
+				;;
+			--without-nvme_host-without-fc)
+				CONFIG_NVME_HOST_WITHOUT_FC=
+				CONFIG_NVME_CORE=
+				CONFIG_BLK_DEV_NVME=
+				CONFIG_NVME_FABRICS=
+				CONFIG_NVME_FC=
+				CONFIG_NVME_RDMA=
+				CONFIG_NVME_MULTIPATH=
+				CONFIG_NVME_TARGET=
+				CONFIG_NVME_TARGET_LOOP=
+				CONFIG_NVME_TARGET_RDMA=
+				CONFIG_NVME_TARGET_FC=
+				CONFIG_NVME_TARGET_FCLOOP=
+				;;
+			--with-nvme_target-mod)
+				CONFIG_NVME_TARGET="m"
+				CONFIG_NVME_TARGET_LOOP="m"
+				CONFIG_NVME_TARGET_RDMA="m"
+				CONFIG_NVME_TARGET_FC="m"
+				CONFIG_NVME_TARGET_FCLOOP="m"
+				CONFIG_NVME_HOST_WITHOUT_FC=
+				;;
+			--without-nvme_target-mod)
+				CONFIG_NVME_TARGET=
+				CONFIG_NVME_TARGET_LOOP=
+				CONFIG_NVME_TARGET_RDMA=
+				CONFIG_NVME_TARGET_FC=
+				CONFIG_NVME_TARGET_FCLOOP=
+				CONFIG_NVME_HOST_WITHOUT_FC=
+				;;
 			--with-nfsrdma-mod)
 				CONFIG_SUNRPC_XPRT_RDMA="m"
 				CONFIG_SUNRPC_XPRT_RDMA_CLIENT="m"
@@ -805,30 +864,6 @@ main()
 				CONFIG_QEDE=
 				CONFIG_INFINIBAND_QEDR=
 				CONFIG_QED_OOO=
-				;;
-			--with-nvme-mod)
-				CONFIG_NVME_CORE="m"
-				CONFIG_BLK_DEV_NVME="m"
-				;;
-			--without-nvme-mod)
-				CONFIG_NVME_CORE=
-				CONFIG_BLK_DEV_NVME=
-				;;
-			--with-nvme-host-mod)
-				CONFIG_NVME_RDMA="m"
-				CONFIG_NVME_FABRICS="m"
-				;;
-			--without-nvme-host-mod)
-				CONFIG_NVME_RDMA=
-				CONFIG_NVME_FABRICS=
-				;;
-			--with-nvme-target-mod)
-				CONFIG_NVME_TARGET="m"
-				CONFIG_NVME_TARGET_RDMA="m"
-				;;
-			--without-nvme-target-mod)
-				CONFIG_NVME_TARGET=
-				CONFIG_NVME_TARGET_RDMA=
 				;;
 			--without-firmware-mod)
 				;;

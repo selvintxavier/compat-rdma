@@ -103,8 +103,6 @@ kernel: $(COMPAT_CONFIG) $(COMPAT_AUTOCONF)
 		$$(if $$(KBUILD_SRC),-Iinclude2 -I$$(srctree)/include) \
 		-I$$(srctree)/arch/$$(SRCARCH)/include \
 		-Iarch/$$(SRCARCH)/include/generated \
-		-I$(CWD)/drivers/nvme/host \
-		-I$(CWD)/drivers/nvme/target \
 		' \
 		modules
 
