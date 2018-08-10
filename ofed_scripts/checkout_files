@@ -13,6 +13,7 @@ include/scsi/srp.h
 include/uapi/linux/nvme_ioctl.h
 include/uapi/linux/rds.h
 include/uapi/rdma/
+block/blk-mq-rdma.c
 drivers/infiniband/
 drivers/net/ethernet/chelsio/Kconfig
 drivers/net/ethernet/chelsio/cxgb3/
