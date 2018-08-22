@@ -1581,7 +1581,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  
  static int mlx5e_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
  {
-@@ -3556,14 +3794,19 @@ static int mlx5e_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
+@@ -3556,15 +3794,20 @@ static int mlx5e_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
  
  	switch (cmd) {
  	case SIOCSHWTSTAMP:
@@ -1597,15 +1597,15 @@ index xxxxxxx..xxxxxxx xxxxxx
  	}
  }
  
-+#ifdef HAVE_NDO_SET_VF_MAC
  #ifdef CONFIG_MLX5_ESWITCH
++#ifdef HAVE_NDO_SET_VF_MAC
  static int mlx5e_set_vf_mac(struct net_device *dev, int vf, u8 *mac)
  {
-@@ -3572,20 +3815,31 @@ static int mlx5e_set_vf_mac(struct net_device *dev, int vf, u8 *mac)
+ 	struct mlx5e_priv *priv = netdev_priv(dev);
+@@ -3572,20 +3815,30 @@ static int mlx5e_set_vf_mac(struct net_device *dev, int vf, u8 *mac)
  
  	return mlx5_eswitch_set_vport_mac(mdev->priv.eswitch, vf + 1, mac);
  }
-+#endif
 +#endif /* HAVE_NDO_SET_VF_MAC */
  
 +#if defined(HAVE_NDO_SET_VF_VLAN) || defined(HAVE_NDO_SET_VF_VLAN_EXTENDED)
@@ -1633,7 +1633,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  static int mlx5e_set_vf_spoofchk(struct net_device *dev, int vf, bool setting)
  {
  	struct mlx5e_priv *priv = netdev_priv(dev);
-@@ -3593,7 +3847,9 @@ static int mlx5e_set_vf_spoofchk(struct net_device *dev, int vf, bool setting)
+@@ -3593,7 +3846,9 @@ static int mlx5e_set_vf_spoofchk(struct net_device *dev, int vf, bool setting)
  
  	return mlx5_eswitch_set_vport_spoofchk(mdev->priv.eswitch, vf + 1, setting);
  }
@@ -1643,7 +1643,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  static int mlx5e_set_vf_trust(struct net_device *dev, int vf, bool setting)
  {
  	struct mlx5e_priv *priv = netdev_priv(dev);
-@@ -3601,17 +3857,40 @@ static int mlx5e_set_vf_trust(struct net_device *dev, int vf, bool setting)
+@@ -3601,17 +3856,40 @@ static int mlx5e_set_vf_trust(struct net_device *dev, int vf, bool setting)
  
  	return mlx5_eswitch_set_vport_trust(mdev->priv.eswitch, vf + 1, setting);
  }
@@ -1684,7 +1684,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  static int mlx5_vport_link2ifla(u8 esw_link)
  {
  	switch (esw_link) {
-@@ -3633,7 +3912,9 @@ static int mlx5_ifla_link2vport(u8 ifla_link)
+@@ -3633,7 +3911,9 @@ static int mlx5_ifla_link2vport(u8 ifla_link)
  	}
  	return MLX5_ESW_VPORT_ADMIN_STATE_AUTO;
  }
@@ -1694,7 +1694,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  static int mlx5e_set_vf_link_state(struct net_device *dev, int vf,
  				   int link_state)
  {
-@@ -3643,7 +3924,9 @@ static int mlx5e_set_vf_link_state(struct net_device *dev, int vf,
+@@ -3643,7 +3923,9 @@ static int mlx5e_set_vf_link_state(struct net_device *dev, int vf,
  	return mlx5_eswitch_set_vport_state(mdev->priv.eswitch, vf + 1,
  					    mlx5_ifla_link2vport(link_state));
  }
@@ -1704,7 +1704,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  static int mlx5e_get_vf_config(struct net_device *dev,
  			       int vf, struct ifla_vf_info *ivi)
  {
-@@ -3654,10 +3937,14 @@ static int mlx5e_get_vf_config(struct net_device *dev,
+@@ -3654,10 +3936,14 @@ static int mlx5e_get_vf_config(struct net_device *dev,
  	err = mlx5_eswitch_get_vport_config(mdev->priv.eswitch, vf + 1, ivi);
  	if (err)
  		return err;
@@ -1719,9 +1719,11 @@ index xxxxxxx..xxxxxxx xxxxxx
  static int mlx5e_get_vf_stats(struct net_device *dev,
  			      int vf, struct ifla_vf_stats *vf_stats)
  {
-@@ -3669,6 +3956,8 @@ static int mlx5e_get_vf_stats(struct net_device *dev,
+@@ -3668,7 +3954,10 @@ static int mlx5e_get_vf_stats(struct net_device *dev,
+ 					    vf_stats);
  }
  #endif
++#endif
  
 +#ifdef HAVE_KERNEL_WITH_VXLAN_SUPPORT_ON
 +#if defined(HAVE_NDO_UDP_TUNNEL_ADD) || defined(HAVE_NDO_UDP_TUNNEL_ADD_EXTENDED)
