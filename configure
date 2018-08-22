@@ -983,6 +983,11 @@ main()
 		fi
 	fi
 
+	check_autofconf CONFIG_NET_SWITCHDEV
+	if [ "X${CONFIG_NET_SWITCHDEV}" != "X1" ]; then
+		CONFIG_MLX5_ESWITCH=
+	fi
+
 	# Create configure.mk
 	/bin/rm -f ${CWD}/${CONFIG}
 	cat >> ${CWD}/${CONFIG} << EOFCONFIG
