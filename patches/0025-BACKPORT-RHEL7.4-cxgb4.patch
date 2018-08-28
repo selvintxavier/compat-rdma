@@ -1,0 +1,355 @@
+From 30fa12d380c4fd8c4551c12d80654144cdd1a9a8 Mon Sep 17 00:00:00 2001
+From: Arjun Vynipadath <arjun@chelsio.com>
+Date: Fri, 10 Aug 2018 17:24:41 +0530
+Subject: [PATCH 4/4] cxgb4: Compilation fixes for RHEL7.4
+
+- Check if net_device has {min/max}_mtu
+- Fix compilation issues due to skb_put*()/skb_push() return
+  pointers.
+- Dont compile tc_u32 and tc_flower for RHEL7.4. This will
+  require too much conditions and is not guarenteed to work
+- Check if pcie_enable_relaxed_ordering() is present.
+- Check if ethtool ops have {get/set}_fec_params().
+---
+ drivers/net/ethernet/chelsio/cxgb4/cxgb4.h         |  8 ++++
+ drivers/net/ethernet/chelsio/cxgb4/cxgb4_ethtool.c |  4 ++
+ drivers/net/ethernet/chelsio/cxgb4/cxgb4_filter.c  |  7 ++-
+ drivers/net/ethernet/chelsio/cxgb4/cxgb4_main.c    | 50 +++++++++++++++++++---
+ .../net/ethernet/chelsio/cxgb4/cxgb4_tc_flower.c   |  3 ++
+ drivers/net/ethernet/chelsio/cxgb4/cxgb4_tc_u32.c  |  3 ++
+ drivers/net/ethernet/chelsio/cxgb4/l2t.c           |  2 +-
+ 7 files changed, 70 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/net/ethernet/chelsio/cxgb4/cxgb4.h b/drivers/net/ethernet/chelsio/cxgb4/cxgb4.h
+index 63b2861..7b933a0 100644
+--- a/drivers/net/ethernet/chelsio/cxgb4/cxgb4.h
++++ b/drivers/net/ethernet/chelsio/cxgb4/cxgb4.h
+@@ -56,6 +56,7 @@
+ #ifdef HAVE_LINUX_RHASHTABLE_H
+ #include <linux/rhashtable.h>
+ #endif
++#include <linux/version.h>
+ 
+ #define CH_WARN(adap, fmt, ...) dev_warn(adap->pdev_dev, fmt, ## __VA_ARGS__)
+ extern struct list_head adapter_list;
+@@ -68,6 +69,13 @@ extern struct mutex uld_mutex;
+ #define ETHTXQ_STOP_THRES \
+ 	(1 + DIV_ROUND_UP((3 * MAX_SKB_FRAGS) / 2 + (MAX_SKB_FRAGS & 1), 8))
+ 
++#if defined(RHEL_RELEASE_CODE)
++ #if ((RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(7,4)) && \
++      (RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(7,5)))
++  #define RHEL_RELEASE_7_4
++ #endif
++#endif
++
+ enum {
+ 	MAX_NPORTS	= 4,     /* max # of ports */
+ 	SERNUM_LEN	= 24,    /* Serial # length */
+diff --git a/drivers/net/ethernet/chelsio/cxgb4/cxgb4_ethtool.c b/drivers/net/ethernet/chelsio/cxgb4/cxgb4_ethtool.c
+index 51e43b8..8828a56 100644
+--- a/drivers/net/ethernet/chelsio/cxgb4/cxgb4_ethtool.c
++++ b/drivers/net/ethernet/chelsio/cxgb4/cxgb4_ethtool.c
+@@ -842,6 +842,7 @@ static int set_link_ksettings(struct net_device *dev,
+ 	return ret;
+ }
+ 
++#ifdef HAVE_GET_SET_FEC
+ /* Translate the Firmware FEC value into the ethtool value. */
+ static inline unsigned int fwcap_to_eth_fec(unsigned int fw_fec)
+ {
+@@ -939,6 +940,7 @@ static int set_fecparam(struct net_device *dev, struct ethtool_fecparam *fec)
+ 		*lc = old_lc;
+ 	return ret;
+ }
++#endif
+ 
+ static void get_pauseparam(struct net_device *dev,
+ 			   struct ethtool_pauseparam *epause)
+@@ -1510,8 +1512,10 @@ static int cxgb4_get_module_eeprom(struct net_device *dev,
+ static const struct ethtool_ops cxgb_ethtool_ops = {
+ 	.get_link_ksettings = get_link_ksettings,
+ 	.set_link_ksettings = set_link_ksettings,
++#ifdef HAVE_GET_SET_FEC
+ 	.get_fecparam      = get_fecparam,
+ 	.set_fecparam      = set_fecparam,
++#endif
+ 	.get_drvinfo       = get_drvinfo,
+ 	.get_msglevel      = get_msglevel,
+ 	.set_msglevel      = set_msglevel,
+diff --git a/drivers/net/ethernet/chelsio/cxgb4/cxgb4_filter.c b/drivers/net/ethernet/chelsio/cxgb4/cxgb4_filter.c
+index b76447b..05b4385 100644
+--- a/drivers/net/ethernet/chelsio/cxgb4/cxgb4_filter.c
++++ b/drivers/net/ethernet/chelsio/cxgb4/cxgb4_filter.c
+@@ -515,7 +515,7 @@ static int del_filter_wr(struct adapter *adapter, int fidx)
+ 	if (!skb)
+ 		return -ENOMEM;
+ 
+-	fwr = __skb_put(skb, len);
++	fwr = (struct fw_filter_wr *)__skb_put(skb, len);
+ 	t4_mk_filtdelwr(f->tid, fwr, (adapter->flags & SHUTTING_DOWN) ? -1
+ 			: adapter->sge.fw_evtq.abs_id);
+ 
+@@ -572,7 +572,12 @@ int set_filter_wr(struct adapter *adapter, int fidx)
+ 		}
+ 	}
+ 
++#ifdef HAVE_SKB_PUT_ZERO
+ 	fwr = __skb_put_zero(skb, sizeof(*fwr));
++#else
++	fwr = (struct fw_filter2_wr *)__skb_put(skb, sizeof(*fwr));
++	memset(fwr, 0, sizeof(*fwr));
++#endif
+ 
+ 	/* It would be nice to put most of the following in t4_hw.c but most
+ 	 * of the work is translating the cxgbtool ch_filter_specification
+diff --git a/drivers/net/ethernet/chelsio/cxgb4/cxgb4_main.c b/drivers/net/ethernet/chelsio/cxgb4/cxgb4_main.c
+index 46dda4f..3722f68 100644
+--- a/drivers/net/ethernet/chelsio/cxgb4/cxgb4_main.c
++++ b/drivers/net/ethernet/chelsio/cxgb4/cxgb4_main.c
+@@ -1223,7 +1223,7 @@ static void mk_tid_release(struct sk_buff *skb, unsigned int chan,
+ 	struct cpl_tid_release *req;
+ 
+ 	set_wr_txq(skb, CPL_PRIORITY_SETUP, chan);
+-	req = __skb_put(skb, sizeof(*req));
++	req = (struct cpl_tid_release *)__skb_put(skb, sizeof(*req));
+ 	INIT_TP_WR(req, tid);
+ 	OPCODE_TID(req) = htonl(MK_OPCODE_TID(CPL_TID_RELEASE, tid));
+ }
+@@ -1407,7 +1407,7 @@ int cxgb4_create_server(const struct net_device *dev, unsigned int stid,
+ 		return -ENOMEM;
+ 
+ 	adap = netdev2adap(dev);
+-	req = __skb_put(skb, sizeof(*req));
++	req = (struct cpl_pass_open_req *)__skb_put(skb, sizeof(*req));
+ 	INIT_TP_WR(req, 0);
+ 	OPCODE_TID(req) = htonl(MK_OPCODE_TID(CPL_PASS_OPEN_REQ, stid));
+ 	req->local_port = sport;
+@@ -1448,7 +1448,7 @@ int cxgb4_create_server6(const struct net_device *dev, unsigned int stid,
+ 		return -ENOMEM;
+ 
+ 	adap = netdev2adap(dev);
+-	req = __skb_put(skb, sizeof(*req));
++	req = (struct cpl_pass_open_req6 *)__skb_put(skb, sizeof(*req));
+ 	INIT_TP_WR(req, 0);
+ 	OPCODE_TID(req) = htonl(MK_OPCODE_TID(CPL_PASS_OPEN_REQ6, stid));
+ 	req->local_port = sport;
+@@ -1480,7 +1480,7 @@ int cxgb4_remove_server(const struct net_device *dev, unsigned int stid,
+ 	if (!skb)
+ 		return -ENOMEM;
+ 
+-	req = __skb_put(skb, sizeof(*req));
++	req = (struct cpl_close_listsvr_req *)__skb_put(skb, sizeof(*req));
+ 	INIT_TP_WR(req, 0);
+ 	OPCODE_TID(req) = htonl(MK_OPCODE_TID(CPL_CLOSE_LISTSRV_REQ, stid));
+ 	req->reply_ctrl = htons(NO_REPLY_V(0) | (ipv6 ? LISTSVR_IPV6_V(1) :
+@@ -1856,7 +1856,11 @@ static void check_neigh_update(struct neighbour *neigh)
+ 	const struct device *parent;
+ 	const struct net_device *netdev = neigh->dev;
+ 
++#ifdef HAVE_IS_VLAN_DEV_CONST
+ 	if (is_vlan_dev(netdev))
++#else
++	if (netdev->priv_flags & IFF_802_1Q_VLAN)
++#endif
+ 		netdev = vlan_dev_real_dev(netdev);
+ 	parent = netdev->dev.parent;
+ 	if (parent && parent->driver == &cxgb4_driver.driver)
+@@ -2442,7 +2446,11 @@ int cxgb4_remove_server_filter(const struct net_device *dev, unsigned int stid,
+ }
+ EXPORT_SYMBOL(cxgb4_remove_server_filter);
+ 
++#ifdef HAVE_NDO_GET_STATS64_RET_VOID
+ static void cxgb_get_stats(struct net_device *dev,
++#else
++static struct rtnl_link_stats64 *cxgb_get_stats(struct net_device *dev,
++#endif
+ 			   struct rtnl_link_stats64 *ns)
+ {
+ 	struct port_stats stats;
+@@ -2456,7 +2464,11 @@ static void cxgb_get_stats(struct net_device *dev,
+ 	spin_lock(&adapter->stats_lock);
+ 	if (!netif_device_present(dev)) {
+ 		spin_unlock(&adapter->stats_lock);
++#ifdef HAVE_NDO_GET_STATS64_RET_VOID
+ 		return;
++#else
++		return ns;
++#endif
+ 	}
+ 	t4_get_port_stats_offset(adapter, p->tx_chan, &stats,
+ 				 &p->stats_base);
+@@ -2490,6 +2502,10 @@ static void cxgb_get_stats(struct net_device *dev,
+ 	ns->tx_errors = stats.tx_error_frames;
+ 	ns->rx_errors = stats.rx_symbol_err + stats.rx_fcs_err +
+ 		ns->rx_length_errors + stats.rx_len_err + ns->rx_fifo_errors;
++
++#ifndef HAVE_NDO_GET_STATS64_RET_VOID
++	return ns;
++#endif
+ }
+ 
+ static int cxgb_ioctl(struct net_device *dev, struct ifreq *req, int cmd)
+@@ -2618,6 +2634,11 @@ static int cxgb_change_mtu(struct net_device *dev, int new_mtu)
+ 	int ret;
+ 	struct port_info *pi = netdev_priv(dev);
+ 
++#ifndef HAVE_NET_DEVICE_MIN_MAX_MTU
++	/* accommodate SACK */
++	if (new_mtu < 81)
++		return -EINVAL;
++#endif
+ 	ret = t4_set_rxmode(pi->adapter, pi->adapter->pf, pi->viid, new_mtu, -1,
+ 			    -1, -1, -1, true);
+ 	if (!ret)
+@@ -2948,6 +2969,7 @@ static int cxgb_set_tx_maxrate(struct net_device *dev, int index, u32 rate)
+ 	return err;
+ }
+ 
++#ifndef RHEL_RELEASE_7_4
+ static int cxgb_setup_tc_flower(struct net_device *dev,
+ 				struct tc_cls_flower_offload *cls_flower)
+ {
+@@ -3062,6 +3084,7 @@ static int cxgb_setup_tc(struct net_device *dev, enum tc_setup_type type,
+ 	}
+ }
+ #endif
++#endif /* RHEL_RELEASE_7_4 */
+ 
+ static void cxgb_del_udp_tunnel(struct net_device *netdev,
+ 				struct udp_tunnel_info *ti)
+@@ -3269,11 +3292,13 @@ static const struct net_device_ops cxgb4_netdev_ops = {
+ #else
+ 	.ndo_set_tx_maxrate = cxgb_set_tx_maxrate,
+ #endif
++#ifndef RHEL_RELEASE_7_4
+ #ifdef HAVE_NDO_SETUP_TC_RH_EXTENDED
+ 	.extended.ndo_setup_tc_rh	= cxgb_setup_tc,
+ #else
+ 	.ndo_setup_tc         = cxgb_setup_tc,
+ #endif
++#endif
+ #ifdef HAVE_NDO_UDP_TUNNEL_ADD_EXTENDED
+ 	.extended.ndo_udp_tunnel_add   = cxgb_add_udp_tunnel,
+ 	.extended.ndo_udp_tunnel_del   = cxgb_del_udp_tunnel,
+@@ -5274,8 +5299,10 @@ static void free_some_resources(struct adapter *adapter)
+ 	kvfree(adapter->srq);
+ 	t4_cleanup_sched(adapter);
+ 	kvfree(adapter->tids.tid_tab);
++#ifndef RHEL_RELEASE_7_4
+ 	cxgb4_cleanup_tc_flower(adapter);
+ 	cxgb4_cleanup_tc_u32(adapter);
++#endif
+ 	kfree(adapter->sge.egr_map);
+ 	kfree(adapter->sge.ingr_map);
+ 	kfree(adapter->sge.starving_fl);
+@@ -5509,6 +5536,9 @@ static int init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
+ 	u32 whoami, pl_rev;
+ 	enum chip_type chip;
+ 	static int adap_idx = 1;
++#ifndef HAVE_PCIE_RELAXED_ORDERING_ENABLED
++	u16 v;
++#endif
+ 
+ 	printk_once(KERN_INFO "%s - version %s\n", DRV_DESC, DRV_VERSION);
+ 
+@@ -5621,7 +5651,12 @@ static int init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
+ 	 * PCIe configuration space to see if it's flagged with advice against
+ 	 * using Relaxed Ordering.
+ 	 */
++#ifdef HAVE_PCIE_RELAXED_ORDERING_ENABLED
+ 	if (!pcie_relaxed_ordering_enabled(pdev))
++#else
++	pcie_capability_read_word(pdev, PCI_EXP_DEVCTL, &v);
++	if (v & PCI_EXP_DEVCTL_RELAX_EN)
++#endif
+ 		adapter->flags |= ROOT_NO_RELAXED_ORDERING;
+ 
+ 	spin_lock_init(&adapter->stats_lock);
+@@ -5715,6 +5750,7 @@ static int init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
+ 		netdev->priv_flags |= IFF_UNICAST_FLT;
+ 
+ 		/* MTU range: 81 - 9600 */
++#ifdef HAVE_NET_DEVICE_MIN_MAX_MTU
+ #ifdef HAVE_NDO_CHANGE_MTU_EXTENDED
+ 		netdev->extended->min_mtu = 81;
+ 		netdev->extended->max_mtu = MAX_MTU;
+@@ -5722,6 +5758,7 @@ static int init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
+ 		netdev->min_mtu = 81;              /* accommodate SACK */
+ 		netdev->max_mtu = MAX_MTU;
+ #endif
++#endif
+ 
+ 		netdev->netdev_ops = &cxgb4_netdev_ops;
+ #ifdef CONFIG_CHELSIO_T4_DCB
+@@ -5811,7 +5848,9 @@ static int init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
+ 		dev_warn(&pdev->dev, "could not allocate TID table, "
+ 			 "continuing\n");
+ 		adapter->params.offload = 0;
+-	} else {
++	}
++#ifndef RHEL_RELEASE_7_4
++	else {
+ 		adapter->tc_u32 = cxgb4_init_tc_u32(adapter);
+ 		if (!adapter->tc_u32)
+ 			dev_warn(&pdev->dev,
+@@ -5821,6 +5860,7 @@ static int init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
+ 			dev_warn(&pdev->dev,
+ 				 "could not offload tc flower, continuing\n");
+ 	}
++#endif
+ 
+ 	if (is_offload(adapter) || is_hashfilter(adapter)) {
+ 		if (t4_read_reg(adapter, LE_DB_CONFIG_A) & HASHEN_F) {
+diff --git a/drivers/net/ethernet/chelsio/cxgb4/cxgb4_tc_flower.c b/drivers/net/ethernet/chelsio/cxgb4/cxgb4_tc_flower.c
+index 45705a5..4b0ab63 100644
+--- a/drivers/net/ethernet/chelsio/cxgb4/cxgb4_tc_flower.c
++++ b/drivers/net/ethernet/chelsio/cxgb4/cxgb4_tc_flower.c
+@@ -41,6 +41,8 @@
+ #include "cxgb4_filter.h"
+ #include "cxgb4_tc_flower.h"
+ 
++#ifndef RHEL_RELEASE_7_4
++
+ #define STATS_CHECK_PERIOD (HZ / 2)
+ 
+ static struct ch_tc_pedit_fields pedits[] = {
+@@ -912,3 +914,4 @@ void cxgb4_cleanup_tc_flower(struct adapter *adap)
+ 	cancel_work_sync(&adap->flower_stats_work);
+ 	rhashtable_destroy(&adap->flower_tbl);
+ }
++#endif /* RHEL_RELEASE_7_4 */
+diff --git a/drivers/net/ethernet/chelsio/cxgb4/cxgb4_tc_u32.c b/drivers/net/ethernet/chelsio/cxgb4/cxgb4_tc_u32.c
+index 973881b..326fc95 100644
+--- a/drivers/net/ethernet/chelsio/cxgb4/cxgb4_tc_u32.c
++++ b/drivers/net/ethernet/chelsio/cxgb4/cxgb4_tc_u32.c
+@@ -39,6 +39,8 @@
+ #include "cxgb4_tc_u32_parse.h"
+ #include "cxgb4_tc_u32.h"
+ 
++#ifndef RHEL_RELEASE_7_4
++
+ /* Fill ch_filter_specification with parsed match value/mask pair. */
+ static int fill_match_fields(struct adapter *adap,
+ 			     struct ch_filter_specification *fs,
+@@ -491,3 +493,4 @@ out_no_mem:
+ 
+ 	return NULL;
+ }
++#endif /* RHEL_RELEASE_7_4 */
+diff --git a/drivers/net/ethernet/chelsio/cxgb4/l2t.c b/drivers/net/ethernet/chelsio/cxgb4/l2t.c
+index 1817a03..abfc856 100644
+--- a/drivers/net/ethernet/chelsio/cxgb4/l2t.c
++++ b/drivers/net/ethernet/chelsio/cxgb4/l2t.c
+@@ -146,7 +146,7 @@ static int write_l2e(struct adapter *adap, struct l2t_entry *e, int sync)
+ 	if (!skb)
+ 		return -ENOMEM;
+ 
+-	req = __skb_put(skb, sizeof(*req));
++	req = (struct cpl_l2t_write_req *)__skb_put(skb, sizeof(*req));
+ 	INIT_TP_WR(req, 0);
+ 
+ 	OPCODE_TID(req) = htonl(MK_OPCODE_TID(CPL_L2T_WRITE_REQ,
+-- 
+2.9.5
+

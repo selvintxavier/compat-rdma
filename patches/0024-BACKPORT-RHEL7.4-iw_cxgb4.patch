@@ -1,0 +1,383 @@
+From ba20bcb90a159b2a3a8bdab6b43436b6ac086bbc Mon Sep 17 00:00:00 2001
+From: Arjun Vynipadath <arjun@chelsio.com>
+Date: Fri, 10 Aug 2018 16:30:14 +0530
+Subject: [PATCH 2/4] iw_cxgb4: Compilation fixes for RHEL7.4
+
+- Fix compilation issues due to skb_put*()/skb_push() return
+  pointers
+- Check if kref_read() exists.
+---
+ drivers/infiniband/hw/cxgb4/cm.c                  | 41 ++++++++++++++++++-----
+ drivers/infiniband/hw/cxgb4/cq.c                  | 10 ++++++
+ drivers/infiniband/hw/cxgb4/iw_cxgb4.h            | 27 +++++++++++++++
+ drivers/infiniband/hw/cxgb4/mem.c                 | 10 ++++++
+ drivers/infiniband/hw/cxgb4/qp.c                  | 11 ++++--
+ drivers/net/ethernet/chelsio/libcxgb/libcxgb_cm.h | 25 ++++++++++++++
+ 6 files changed, 113 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/infiniband/hw/cxgb4/cm.c b/drivers/infiniband/hw/cxgb4/cm.c
+index d5fb5af..a924b05 100644
+--- a/drivers/infiniband/hw/cxgb4/cm.c
++++ b/drivers/infiniband/hw/cxgb4/cm.c
+@@ -607,7 +607,7 @@ static int send_flowc(struct c4iw_ep *ep)
+ 	else
+ 		nparams = 9;
+ 
+-	flowc = __skb_put(skb, FLOWC_LEN);
++	flowc = (struct fw_flowc_wr *)__skb_put(skb, FLOWC_LEN);
+ 
+ 	flowc->op_to_nparams = cpu_to_be32(FW_WR_OP_V(FW_FLOWC_WR) |
+ 					   FW_FLOWC_WR_NPARAMS_V(nparams));
+@@ -797,16 +797,16 @@ static int send_connect(struct c4iw_ep *ep)
+ 	if (ep->com.remote_addr.ss_family == AF_INET) {
+ 		switch (CHELSIO_CHIP_VERSION(adapter_type)) {
+ 		case CHELSIO_T4:
+-			req = skb_put(skb, wrlen);
++			req = (struct cpl_act_open_req *)skb_put(skb, wrlen);
+ 			INIT_TP_WR(req, 0);
+ 			break;
+ 		case CHELSIO_T5:
+-			t5req = skb_put(skb, wrlen);
++			t5req = (struct cpl_t5_act_open_req *)skb_put(skb, wrlen);
+ 			INIT_TP_WR(t5req, 0);
+ 			req = (struct cpl_act_open_req *)t5req;
+ 			break;
+ 		case CHELSIO_T6:
+-			t6req = skb_put(skb, wrlen);
++			t6req = (struct cpl_t6_act_open_req *)skb_put(skb, wrlen);
+ 			INIT_TP_WR(t6req, 0);
+ 			req = (struct cpl_act_open_req *)t6req;
+ 			t5req = (struct cpl_t5_act_open_req *)t6req;
+@@ -847,16 +847,16 @@ static int send_connect(struct c4iw_ep *ep)
+ 	} else {
+ 		switch (CHELSIO_CHIP_VERSION(adapter_type)) {
+ 		case CHELSIO_T4:
+-			req6 = skb_put(skb, wrlen);
++			req6 = (struct cpl_act_open_req6 *)skb_put(skb, wrlen);
+ 			INIT_TP_WR(req6, 0);
+ 			break;
+ 		case CHELSIO_T5:
+-			t5req6 = skb_put(skb, wrlen);
++			t5req6 = (struct cpl_t5_act_open_req6 *)skb_put(skb, wrlen);
+ 			INIT_TP_WR(t5req6, 0);
+ 			req6 = (struct cpl_act_open_req6 *)t5req6;
+ 			break;
+ 		case CHELSIO_T6:
+-			t6req6 = skb_put(skb, wrlen);
++			t6req6 = (struct cpl_t6_act_open_req6 *)skb_put(skb, wrlen);
+ 			INIT_TP_WR(t6req6, 0);
+ 			req6 = (struct cpl_act_open_req6 *)t6req6;
+ 			t5req6 = (struct cpl_t5_act_open_req6 *)t6req6;
+@@ -931,7 +931,12 @@ static int send_mpa_req(struct c4iw_ep *ep, struct sk_buff *skb,
+ 	}
+ 	set_wr_txq(skb, CPL_PRIORITY_DATA, ep->txq_idx);
+ 
++#ifdef HAVE_SKB_PUT_ZERO
+ 	req = skb_put_zero(skb, wrlen);
++#else
++	req = (struct fw_ofld_tx_data_wr *)skb_put(skb, wrlen);
++	memset(req, 0, wrlen);
++#endif
+ 	req->op_to_immdlen = cpu_to_be32(
+ 		FW_WR_OP_V(FW_OFLD_TX_DATA_WR) |
+ 		FW_WR_COMPL_F |
+@@ -1036,7 +1041,12 @@ static int send_mpa_reject(struct c4iw_ep *ep, const void *pdata, u8 plen)
+ 	}
+ 	set_wr_txq(skb, CPL_PRIORITY_DATA, ep->txq_idx);
+ 
++#ifdef HAVE_SKB_PUT_ZERO
+ 	req = skb_put_zero(skb, wrlen);
++#else
++	req = (struct fw_ofld_tx_data_wr *)skb_put(skb, wrlen);
++	memset(req, 0, wrlen);
++#endif
+ 	req->op_to_immdlen = cpu_to_be32(
+ 		FW_WR_OP_V(FW_OFLD_TX_DATA_WR) |
+ 		FW_WR_COMPL_F |
+@@ -1115,7 +1125,12 @@ static int send_mpa_reply(struct c4iw_ep *ep, const void *pdata, u8 plen)
+ 	}
+ 	set_wr_txq(skb, CPL_PRIORITY_DATA, ep->txq_idx);
+ 
++#ifdef HAVE_SKB_PUT_ZERO
+ 	req = skb_put_zero(skb, wrlen);
++#else
++	req = (struct fw_ofld_tx_data_wr *)skb_put(skb, wrlen);
++	memset(req, 0, wrlen);
++#endif
+ 	req->op_to_immdlen = cpu_to_be32(
+ 		FW_WR_OP_V(FW_OFLD_TX_DATA_WR) |
+ 		FW_WR_COMPL_F |
+@@ -1903,7 +1918,12 @@ static int send_fw_act_open_req(struct c4iw_ep *ep, unsigned int atid)
+ 	int win;
+ 
+ 	skb = get_skb(NULL, sizeof(*req), GFP_KERNEL);
++#ifdef HAVE_SKB_PUT_ZERO
+ 	req = __skb_put_zero(skb, sizeof(*req));
++#else
++	req = (struct fw_ofld_connection_wr *)__skb_put(skb, sizeof(*req));
++	memset(req, 0, sizeof(*req));
++#endif
+ 	req->op_compl = htonl(WR_OP_V(FW_OFLD_CONNECTION_WR));
+ 	req->len16_pkd = htonl(FW_WR_LEN16_V(DIV_ROUND_UP(sizeof(*req), 16)));
+ 	req->le.filter = cpu_to_be32(cxgb4_select_ntuple(
+@@ -3770,7 +3790,7 @@ static void build_cpl_pass_accept_req(struct sk_buff *skb, int stid , u8 tos)
+ 	tcp_parse_options(skb, &tmp_opt, 0, NULL);
+ #endif
+ 
+-	req = __skb_push(skb, sizeof(*req));
++	req = (struct cpl_pass_accept_req *)__skb_push(skb, sizeof(*req));
+ 	memset(req, 0, sizeof(*req));
+ 	req->l2info = cpu_to_be16(SYN_INTF_V(intf) |
+ 			 SYN_MAC_IDX_V(RX_MACIDX_G(
+@@ -3822,7 +3842,12 @@ static void send_fw_pass_open_req(struct c4iw_dev *dev, struct sk_buff *skb,
+ 	req_skb = alloc_skb(sizeof(struct fw_ofld_connection_wr), GFP_KERNEL);
+ 	if (!req_skb)
+ 		return;
++#ifdef HAVE_SKB_PUT_ZERO
+ 	req = __skb_put_zero(req_skb, sizeof(*req));
++#else
++	req = (struct fw_ofld_connection_wr *)__skb_put(req_skb, sizeof(*req));
++	memset(req, 0, sizeof(*req));
++#endif
+ 	req->op_compl = htonl(WR_OP_V(FW_OFLD_CONNECTION_WR) | FW_WR_COMPL_F);
+ 	req->len16_pkd = htonl(FW_WR_LEN16_V(DIV_ROUND_UP(sizeof(*req), 16)));
+ 	req->le.version_cpl = htonl(FW_OFLD_CONNECTION_WR_CPL_F);
+diff --git a/drivers/infiniband/hw/cxgb4/cq.c b/drivers/infiniband/hw/cxgb4/cq.c
+index 2be2e1a..e55d1ef 100644
+--- a/drivers/infiniband/hw/cxgb4/cq.c
++++ b/drivers/infiniband/hw/cxgb4/cq.c
+@@ -44,7 +44,12 @@ static int destroy_cq(struct c4iw_rdev *rdev, struct t4_cq *cq,
+ 	wr_len = sizeof *res_wr + sizeof *res;
+ 	set_wr_txq(skb, CPL_PRIORITY_CONTROL, 0);
+ 
++#ifdef HAVE_SKB_PUT_ZERO
+ 	res_wr = __skb_put_zero(skb, wr_len);
++#else
++	res_wr = (struct fw_ri_res_wr *)__skb_put(skb, wr_len);
++	memset(res_wr, 0, wr_len);
++#endif
+ 	res_wr->op_nres = cpu_to_be32(
+ 			FW_WR_OP_V(FW_RI_RES_WR) |
+ 			FW_RI_RES_WR_NRES_V(1) |
+@@ -110,7 +115,12 @@ static int create_cq(struct c4iw_rdev *rdev, struct t4_cq *cq,
+ 	}
+ 	set_wr_txq(skb, CPL_PRIORITY_CONTROL, 0);
+ 
++#ifdef HAVE_SKB_PUT_ZERO
+ 	res_wr = __skb_put_zero(skb, wr_len);
++#else
++	res_wr = (struct fw_ri_res_wr *)__skb_put(skb, wr_len);
++	memset(res_wr, 0, wr_len);
++#endif
+ 	res_wr->op_nres = cpu_to_be32(
+ 			FW_WR_OP_V(FW_RI_RES_WR) |
+ 			FW_RI_RES_WR_NRES_V(1) |
+diff --git a/drivers/infiniband/hw/cxgb4/iw_cxgb4.h b/drivers/infiniband/hw/cxgb4/iw_cxgb4.h
+index 1cb8760..884bc53 100644
+--- a/drivers/infiniband/hw/cxgb4/iw_cxgb4.h
++++ b/drivers/infiniband/hw/cxgb4/iw_cxgb4.h
+@@ -213,17 +213,29 @@ void _c4iw_free_wr_wait(struct kref *kref);
+ 
+ static inline void c4iw_put_wr_wait(struct c4iw_wr_wait *wr_waitp)
+ {
++#ifdef HAVE_KREF_READ
+ 	pr_debug("wr_wait %p ref before put %u\n", wr_waitp,
+ 		 kref_read(&wr_waitp->kref));
+ 	WARN_ON(kref_read(&wr_waitp->kref) == 0);
++#else
++	pr_debug("wr_wait %p ref before put %u\n", wr_waitp,
++		 atomic_read(&wr_waitp->kref.refcount));
++	WARN_ON(atomic_read(&wr_waitp->kref.refcount) == 0);
++#endif
+ 	kref_put(&wr_waitp->kref, _c4iw_free_wr_wait);
+ }
+ 
+ static inline void c4iw_get_wr_wait(struct c4iw_wr_wait *wr_waitp)
+ {
++#ifdef HAVE_KREF_READ
+ 	pr_debug("wr_wait %p ref before get %u\n", wr_waitp,
+ 		 kref_read(&wr_waitp->kref));
+ 	WARN_ON(kref_read(&wr_waitp->kref) == 0);
++#else
++	pr_debug("wr_wait %p ref before get %u\n", wr_waitp,
++		 atomic_read(&wr_waitp->kref.refcount));
++	WARN_ON(atomic_read(&wr_waitp->kref.refcount) == 0);
++#endif
+ 	kref_get(&wr_waitp->kref);
+ }
+ 
+@@ -737,6 +749,7 @@ enum c4iw_mmid_state {
+ #define MPA_V2_RDMA_READ_RTR            0x4000
+ #define MPA_V2_IRD_ORD_MASK             0x3FFF
+ 
++#ifdef HAVE_KREF_READ
+ #define c4iw_put_ep(ep) {						\
+ 	pr_debug("put_ep ep %p refcnt %d\n",		\
+ 		 ep, kref_read(&((ep)->kref)));				\
+@@ -749,6 +762,20 @@ enum c4iw_mmid_state {
+ 		 ep, kref_read(&((ep)->kref)));				\
+ 	kref_get(&((ep)->kref));					\
+ }
++#else
++#define c4iw_put_ep(ep) {						\
++	pr_debug("put_ep ep %p refcnt %d\n",		\
++		 ep, atomic_read(&((ep)->kref.refcount)));				\
++	WARN_ON(atomic_read(&((ep)->kref.refcount)) < 1);				\
++	kref_put(&((ep)->kref), _c4iw_free_ep);				\
++}
++
++#define c4iw_get_ep(ep) {						\
++	pr_debug("get_ep ep %p, refcnt %d\n",		\
++		 ep, atomic_read(&((ep)->kref.refcount)));				\
++	kref_get(&((ep)->kref));					\
++}
++#endif
+ void _c4iw_free_ep(struct kref *kref);
+ 
+ struct mpa_message {
+diff --git a/drivers/infiniband/hw/cxgb4/mem.c b/drivers/infiniband/hw/cxgb4/mem.c
+index 1445918..6874cf2 100644
+--- a/drivers/infiniband/hw/cxgb4/mem.c
++++ b/drivers/infiniband/hw/cxgb4/mem.c
+@@ -81,7 +81,12 @@ static int _c4iw_write_mem_dma_aligned(struct c4iw_rdev *rdev, u32 addr,
+ 	}
+ 	set_wr_txq(skb, CPL_PRIORITY_CONTROL, 0);
+ 
++#ifdef HAVE_SKB_PUT_ZERO
+ 	req = __skb_put_zero(skb, wr_len);
++#else
++	req = (struct ulp_mem_io *)__skb_put(skb, wr_len);
++	memset(req, 0, wr_len);
++#endif
+ 	INIT_ULPTX_WR(req, wr_len, 0, 0);
+ 	req->wr.wr_hi = cpu_to_be32(FW_WR_OP_V(FW_ULPTX_WR) |
+ 			(wr_waitp ? FW_WR_COMPL_F : 0));
+@@ -140,7 +145,12 @@ static int _c4iw_write_mem_inline(struct c4iw_rdev *rdev, u32 addr, u32 len,
+ 		}
+ 		set_wr_txq(skb, CPL_PRIORITY_CONTROL, 0);
+ 
++#ifdef HAVE_SKB_PUT_ZERO
+ 		req = __skb_put_zero(skb, wr_len);
++#else
++		req = (struct ulp_mem_io *)__skb_put(skb, wr_len);
++		memset(req, 0, wr_len);
++#endif
+ 		INIT_ULPTX_WR(req, wr_len, 0, 0);
+ 
+ 		if (i == (num_wqe-1)) {
+diff --git a/drivers/infiniband/hw/cxgb4/qp.c b/drivers/infiniband/hw/cxgb4/qp.c
+index 30bdab6..f3f13fc 100644
+--- a/drivers/infiniband/hw/cxgb4/qp.c
++++ b/drivers/infiniband/hw/cxgb4/qp.c
+@@ -293,7 +293,12 @@ static int create_qp(struct c4iw_rdev *rdev, struct t4_wq *wq,
+ 	}
+ 	set_wr_txq(skb, CPL_PRIORITY_CONTROL, 0);
+ 
++#ifdef HAVE_SKB_PUT_ZERO
+ 	res_wr = __skb_put_zero(skb, wr_len);
++#else
++	res_wr = (struct fw_ri_res_wr *)__skb_put(skb, wr_len);
++	memset(res_wr, 0, wr_len);
++#endif
+ 	res_wr->op_nres = cpu_to_be32(
+ 			FW_WR_OP_V(FW_RI_RES_WR) |
+ 			FW_RI_RES_WR_NRES_V(2) |
+@@ -1297,7 +1302,7 @@ static void post_terminate(struct c4iw_qp *qhp, struct t4_cqe *err_cqe,
+ 
+ 	set_wr_txq(skb, CPL_PRIORITY_DATA, qhp->ep->txq_idx);
+ 
+-	wqe = __skb_put(skb, sizeof(*wqe));
++	wqe = (struct fw_ri_wr *)__skb_put(skb, sizeof(*wqe));
+ 	memset(wqe, 0, sizeof *wqe);
+ 	wqe->op_compl = cpu_to_be32(FW_WR_OP_V(FW_RI_INIT_WR));
+ 	wqe->flowid_len16 = cpu_to_be32(
+@@ -1421,7 +1426,7 @@ static int rdma_fini(struct c4iw_dev *rhp, struct c4iw_qp *qhp,
+ 
+ 	set_wr_txq(skb, CPL_PRIORITY_DATA, ep->txq_idx);
+ 
+-	wqe = __skb_put(skb, sizeof(*wqe));
++	wqe = (struct fw_ri_wr *)__skb_put(skb, sizeof(*wqe));
+ 	memset(wqe, 0, sizeof *wqe);
+ 	wqe->op_compl = cpu_to_be32(
+ 		FW_WR_OP_V(FW_RI_INIT_WR) |
+@@ -1487,7 +1492,7 @@ static int rdma_init(struct c4iw_dev *rhp, struct c4iw_qp *qhp)
+ 	}
+ 	set_wr_txq(skb, CPL_PRIORITY_DATA, qhp->ep->txq_idx);
+ 
+-	wqe = __skb_put(skb, sizeof(*wqe));
++	wqe = (struct fw_ri_wr *)__skb_put(skb, sizeof(*wqe));
+ 	memset(wqe, 0, sizeof *wqe);
+ 	wqe->op_compl = cpu_to_be32(
+ 		FW_WR_OP_V(FW_RI_INIT_WR) |
+diff --git a/drivers/net/ethernet/chelsio/libcxgb/libcxgb_cm.h b/drivers/net/ethernet/chelsio/libcxgb/libcxgb_cm.h
+index 240ba9d..bff8853 100644
+--- a/drivers/net/ethernet/chelsio/libcxgb/libcxgb_cm.h
++++ b/drivers/net/ethernet/chelsio/libcxgb/libcxgb_cm.h
+@@ -90,7 +90,12 @@ cxgb_mk_tid_release(struct sk_buff *skb, u32 len, u32 tid, u16 chan)
+ {
+ 	struct cpl_tid_release *req;
+ 
++#ifdef HAVE_SKB_PUT_ZERO
+ 	req = __skb_put_zero(skb, len);
++#else
++	req = (struct cpl_tid_release *)__skb_put(skb, sizeof(*req));
++	memset(req, 0, len);
++#endif
+ 
+ 	INIT_TP_WR(req, tid);
+ 	OPCODE_TID(req) = cpu_to_be32(MK_OPCODE_TID(CPL_TID_RELEASE, tid));
+@@ -103,7 +108,12 @@ cxgb_mk_close_con_req(struct sk_buff *skb, u32 len, u32 tid, u16 chan,
+ {
+ 	struct cpl_close_con_req *req;
+ 
++#ifdef HAVE_SKB_PUT_ZERO
+ 	req = __skb_put_zero(skb, len);
++#else
++	req = (struct cpl_close_con_req *)__skb_put(skb, sizeof(*req));
++	memset(req, 0, len);
++#endif
+ 
+ 	INIT_TP_WR(req, tid);
+ 	OPCODE_TID(req) = cpu_to_be32(MK_OPCODE_TID(CPL_CLOSE_CON_REQ, tid));
+@@ -117,7 +127,12 @@ cxgb_mk_abort_req(struct sk_buff *skb, u32 len, u32 tid, u16 chan,
+ {
+ 	struct cpl_abort_req *req;
+ 
++#ifdef HAVE_SKB_PUT_ZERO
+ 	req = __skb_put_zero(skb, len);
++#else
++	req = (struct cpl_abort_req *)__skb_put(skb, sizeof(*req));
++	memset(req, 0, len);
++#endif
+ 
+ 	INIT_TP_WR(req, tid);
+ 	OPCODE_TID(req) = cpu_to_be32(MK_OPCODE_TID(CPL_ABORT_REQ, tid));
+@@ -131,7 +146,12 @@ cxgb_mk_abort_rpl(struct sk_buff *skb, u32 len, u32 tid, u16 chan)
+ {
+ 	struct cpl_abort_rpl *rpl;
+ 
++#ifdef HAVE_SKB_PUT_ZERO
+ 	rpl = __skb_put_zero(skb, len);
++#else
++	rpl = (struct cpl_abort_rpl *)__skb_put(skb, sizeof(*rpl));
++	memset(rpl, 0, len);
++#endif
+ 
+ 	INIT_TP_WR(rpl, tid);
+ 	OPCODE_TID(rpl) = cpu_to_be32(MK_OPCODE_TID(CPL_ABORT_RPL, tid));
+@@ -145,7 +165,12 @@ cxgb_mk_rx_data_ack(struct sk_buff *skb, u32 len, u32 tid, u16 chan,
+ {
+ 	struct cpl_rx_data_ack *req;
+ 
++#ifdef HAVE_SKB_PUT_ZERO
+ 	req = __skb_put_zero(skb, len);
++#else
++	req = (struct cpl_rx_data_ack *)__skb_put(skb, sizeof(*req));
++	memset(req, 0, len);
++#endif
+ 
+ 	INIT_TP_WR(req, tid);
+ 	OPCODE_TID(req) = cpu_to_be32(MK_OPCODE_TID(CPL_RX_DATA_ACK, tid));
+-- 
+2.9.5
+
