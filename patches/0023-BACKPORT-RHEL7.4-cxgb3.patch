@@ -1,0 +1,173 @@
+From ff825051420daaf431ce656215e629c5b89ab54e Mon Sep 17 00:00:00 2001
+From: Arjun Vynipadath <arjun@chelsio.com>
+Date: Fri, 10 Aug 2018 16:32:40 +0530
+Subject: [PATCH 3/4] cxgb3: Compilation fixes for RHEL7.4
+
+- Check if net_device has {min/max}_mtu
+- Fix compilation issues due to skb_put*()/skb_push() return
+  pointers.
+---
+ drivers/net/ethernet/chelsio/cxgb3/cxgb3_main.c    | 32 ++++++++++++++++++++--
+ drivers/net/ethernet/chelsio/cxgb3/cxgb3_offload.c |  4 +--
+ drivers/net/ethernet/chelsio/cxgb3/l2t.c           |  2 +-
+ drivers/net/ethernet/chelsio/cxgb3/sge.c           |  5 +++-
+ 4 files changed, 37 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/net/ethernet/chelsio/cxgb3/cxgb3_main.c b/drivers/net/ethernet/chelsio/cxgb3/cxgb3_main.c
+index a875795..4b10411 100644
+--- a/drivers/net/ethernet/chelsio/cxgb3/cxgb3_main.c
++++ b/drivers/net/ethernet/chelsio/cxgb3/cxgb3_main.c
+@@ -475,7 +475,12 @@ static int init_tp_parity(struct adapter *adap)
+ 		if (!skb)
+ 			goto alloc_skb_fail;
+ 
++#ifdef HAVE_SKB_PUT_ZERO
+ 		req = __skb_put_zero(skb, sizeof(*req));
++#else
++		req = (struct cpl_smt_write_req *)__skb_put(skb, sizeof(*req));
++		memset(req, 0, sizeof(*req));
++#endif
+ 		req->wr.wr_hi = htonl(V_WR_OP(FW_WROPCODE_FORWARD));
+ 		OPCODE_TID(req) = htonl(MK_OPCODE_TID(CPL_SMT_WRITE_REQ, i));
+ 		req->mtu_idx = NMTUS - 1;
+@@ -498,7 +503,12 @@ static int init_tp_parity(struct adapter *adap)
+ 		if (!skb)
+ 			goto alloc_skb_fail;
+ 
++#ifdef HAVE_SKB_PUT_ZERO
+ 		req = __skb_put_zero(skb, sizeof(*req));
++#else
++		req = (struct cpl_l2t_write_req *)__skb_put(skb, sizeof(*req));
++		memset(req, 0, sizeof(*req));
++#endif
+ 		req->wr.wr_hi = htonl(V_WR_OP(FW_WROPCODE_FORWARD));
+ 		OPCODE_TID(req) = htonl(MK_OPCODE_TID(CPL_L2T_WRITE_REQ, i));
+ 		req->params = htonl(V_L2T_W_IDX(i));
+@@ -520,7 +530,12 @@ static int init_tp_parity(struct adapter *adap)
+ 		if (!skb)
+ 			goto alloc_skb_fail;
+ 
++#ifdef HAVE_SKB_PUT_ZERO
+ 		req = __skb_put_zero(skb, sizeof(*req));
++#else
++		req = (struct cpl_rte_write_req *)__skb_put(skb, sizeof(*req));
++		memset(req, 0, sizeof(*req));
++#endif
+ 		req->wr.wr_hi = htonl(V_WR_OP(FW_WROPCODE_FORWARD));
+ 		OPCODE_TID(req) = htonl(MK_OPCODE_TID(CPL_RTE_WRITE_REQ, i));
+ 		req->l2t_idx = htonl(V_L2T_W_IDX(i));
+@@ -539,7 +554,12 @@ static int init_tp_parity(struct adapter *adap)
+ 	if (!skb)
+ 		goto alloc_skb_fail;
+ 
++#ifdef HAVE_SKB_PUT_ZERO
+ 	greq = __skb_put_zero(skb, sizeof(*greq));
++#else
++	greq = (struct cpl_set_tcb_field *)__skb_put(skb, sizeof(*greq));
++	memset(greq, 0, sizeof(*greq));
++#endif
+ 	greq->wr.wr_hi = htonl(V_WR_OP(FW_WROPCODE_FORWARD));
+ 	OPCODE_TID(greq) = htonl(MK_OPCODE_TID(CPL_SET_TCB_FIELD, 0));
+ 	greq->mask = cpu_to_be64(1);
+@@ -913,7 +933,7 @@ static int write_smt_entry(struct adapter *adapter, int idx)
+ 	if (!skb)
+ 		return -ENOMEM;
+ 
+-	req = __skb_put(skb, sizeof(*req));
++	req = (struct cpl_smt_write_req *)__skb_put(skb, sizeof(*req));
+ 	req->wr.wr_hi = htonl(V_WR_OP(FW_WROPCODE_FORWARD));
+ 	OPCODE_TID(req) = htonl(MK_OPCODE_TID(CPL_SMT_WRITE_REQ, idx));
+ 	req->mtu_idx = NMTUS - 1;	/* should be 0 but there's a T3 bug */
+@@ -956,7 +976,7 @@ static int send_pktsched_cmd(struct adapter *adap, int sched, int qidx, int lo,
+ 	if (!skb)
+ 		return -ENOMEM;
+ 
+-	req = skb_put(skb, sizeof(*req));
++	req = (struct mngt_pktsched_wr *)skb_put(skb, sizeof(*req));
+ 	req->wr_hi = htonl(V_WR_OP(FW_WROPCODE_MNGT));
+ 	req->mngt_opcode = FW_MNGTOPCODE_PKTSCHED_SET;
+ 	req->sched = sched;
+@@ -2544,6 +2564,12 @@ static int cxgb_change_mtu(struct net_device *dev, int new_mtu)
+ 	struct adapter *adapter = pi->adapter;
+ 	int ret;
+ 
++#ifndef HAVE_NET_DEVICE_MIN_MAX_MTU
++	/* accommodate SACK */
++	if (new_mtu < 81)
++		return -EINVAL;
++#endif
++
+ 	if ((ret = t3_mac_set_mtu(&pi->mac, new_mtu)))
+ 		return ret;
+ 	dev->mtu = new_mtu;
+@@ -3310,6 +3336,7 @@ static int init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
+ 
+ 		netdev->netdev_ops = &cxgb_netdev_ops;
+ 		netdev->ethtool_ops = &cxgb_ethtool_ops;
++#ifdef HAVE_NET_DEVICE_MIN_MAX_MTU
+ #ifdef HAVE_NDO_CHANGE_MTU_EXTENDED
+ 		netdev->extended->min_mtu = 81;
+ 		netdev->extended->max_mtu = ETH_MAX_MTU;
+@@ -3317,6 +3344,7 @@ static int init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
+ 		netdev->min_mtu = 81;
+ 		netdev->max_mtu = ETH_MAX_MTU;
+ #endif
++#endif
+ 		netdev->dev_port = pi->port_id;
+ 	}
+ 
+diff --git a/drivers/net/ethernet/chelsio/cxgb3/cxgb3_offload.c b/drivers/net/ethernet/chelsio/cxgb3/cxgb3_offload.c
+index d4945d2..600dc45 100644
+--- a/drivers/net/ethernet/chelsio/cxgb3/cxgb3_offload.c
++++ b/drivers/net/ethernet/chelsio/cxgb3/cxgb3_offload.c
+@@ -556,7 +556,7 @@ static inline void mk_tid_release(struct sk_buff *skb, unsigned int tid)
+ 	struct cpl_tid_release *req;
+ 
+ 	skb->priority = CPL_PRIORITY_SETUP;
+-	req = __skb_put(skb, sizeof(*req));
++	req = (struct cpl_tid_release *)__skb_put(skb, sizeof(*req));
+ 	req->wr.wr_hi = htonl(V_WR_OP(FW_WROPCODE_FORWARD));
+ 	OPCODE_TID(req) = htonl(MK_OPCODE_TID(CPL_TID_RELEASE, tid));
+ }
+@@ -1100,7 +1100,7 @@ static void set_l2t_ix(struct t3cdev *tdev, u32 tid, struct l2t_entry *e)
+ 		return;
+ 	}
+ 	skb->priority = CPL_PRIORITY_CONTROL;
+-	req = skb_put(skb, sizeof(*req));
++	req = (struct cpl_set_tcb_field *)skb_put(skb, sizeof(*req));
+ 	req->wr.wr_hi = htonl(V_WR_OP(FW_WROPCODE_FORWARD));
+ 	OPCODE_TID(req) = htonl(MK_OPCODE_TID(CPL_SET_TCB_FIELD, tid));
+ 	req->reply = 0;
+diff --git a/drivers/net/ethernet/chelsio/cxgb3/l2t.c b/drivers/net/ethernet/chelsio/cxgb3/l2t.c
+index 248e40c..2626412 100644
+--- a/drivers/net/ethernet/chelsio/cxgb3/l2t.c
++++ b/drivers/net/ethernet/chelsio/cxgb3/l2t.c
+@@ -96,7 +96,7 @@ static int setup_l2e_send_pending(struct t3cdev *dev, struct sk_buff *skb,
+ 			return -ENOMEM;
+ 	}
+ 
+-	req = __skb_put(skb, sizeof(*req));
++	req = (struct cpl_l2t_write_req *)__skb_put(skb, sizeof(*req));
+ 	req->wr.wr_hi = htonl(V_WR_OP(FW_WROPCODE_FORWARD));
+ 	OPCODE_TID(req) = htonl(MK_OPCODE_TID(CPL_L2T_WRITE_REQ, e->idx));
+ 	req->params = htonl(V_L2T_W_IDX(e->idx) | V_L2T_W_IFF(e->smt_idx) |
+diff --git a/drivers/net/ethernet/chelsio/cxgb3/sge.c b/drivers/net/ethernet/chelsio/cxgb3/sge.c
+index be5ba39..72174c8 100644
+--- a/drivers/net/ethernet/chelsio/cxgb3/sge.c
++++ b/drivers/net/ethernet/chelsio/cxgb3/sge.c
+@@ -2347,8 +2347,11 @@ static int process_responses(struct adapter *adap, struct sge_qset *qs,
+ 			skb = alloc_skb(AN_PKT_SIZE, GFP_ATOMIC);
+ 			if (!skb)
+ 				goto no_mem;
+-
++#ifdef HAVE_SKB_PUT_DATA
+ 			__skb_put_data(skb, r, AN_PKT_SIZE);
++#else
++			memcpy(__skb_put(skb, AN_PKT_SIZE), r, AN_PKT_SIZE);
++#endif
+ 			skb->data[0] = CPL_ASYNC_NOTIF;
+ 			rss_hi = htonl(CPL_ASYNC_NOTIF << 24);
+ 			q->async_notif++;
+-- 
+2.9.5
+

@@ -1,0 +1,274 @@
+From a39729a9002189db82a89f15827402d3d96ec807 Mon Sep 17 00:00:00 2001
+From: Arjun Vynipadath <arjun@chelsio.com>
+Date: Fri, 10 Aug 2018 16:26:23 +0530
+Subject: [PATCH 1/4] iw_cxgb3: Compilation fixes for RHEL7.4
+
+- Fix compilation issues due to skb_put*()/skb_push() return pointers
+- Check if kref_read() exists.
+---
+ drivers/infiniband/hw/cxgb3/cxio_hal.c | 12 +++++++++++-
+ drivers/infiniband/hw/cxgb3/iwch_cm.c  | 33 +++++++++++++++++++--------------
+ drivers/infiniband/hw/cxgb3/iwch_cm.h  | 15 +++++++++++++++
+ drivers/infiniband/hw/cxgb3/iwch_qp.c  | 14 ++++++++++++++
+ 4 files changed, 59 insertions(+), 15 deletions(-)
+
+diff --git a/drivers/infiniband/hw/cxgb3/cxio_hal.c b/drivers/infiniband/hw/cxgb3/cxio_hal.c
+index 3328acc..8949371 100644
+--- a/drivers/infiniband/hw/cxgb3/cxio_hal.c
++++ b/drivers/infiniband/hw/cxgb3/cxio_hal.c
+@@ -142,7 +142,12 @@ static int cxio_hal_clear_qp_ctx(struct cxio_rdev *rdev_p, u32 qpid)
+ 		pr_debug("%s alloc_skb failed\n", __func__);
+ 		return -ENOMEM;
+ 	}
++#ifdef HAVE_SKB_PUT_ZERO
+ 	wqe = skb_put_zero(skb, sizeof(*wqe));
++#else
++	wqe = (struct t3_modify_qp_wr *)skb_put(skb, sizeof(*wqe));
++	memset(skb, 0, sizeof(*wqe));
++#endif
+ 	build_fw_riwrh((struct fw_riwrh *) wqe, T3_WR_QP_MOD,
+ 		       T3_COMPLETION_FLAG | T3_NOTIFY_FLAG, 0, qpid, 7,
+ 		       T3_SOPEOP);
+@@ -558,7 +563,12 @@ static int cxio_hal_init_ctrl_qp(struct cxio_rdev *rdev_p)
+ 	ctx1 |= ((u64) (V_EC_BASE_HI((u32) base_addr & 0xf) | V_EC_RESPQ(0) |
+ 			V_EC_TYPE(0) | V_EC_GEN(1) |
+ 			V_EC_UP_TOKEN(T3_CTL_QP_TID) | F_EC_VALID)) << 32;
++#ifdef HAVE_SKB_PUT_ZERO
+ 	wqe = skb_put_zero(skb, sizeof(*wqe));
++#else
++	wqe = (struct t3_modify_qp_wr *)skb_put(skb, sizeof(*wqe));
++	memset(skb, 0, sizeof(*wqe));
++#endif
+ 	build_fw_riwrh((struct fw_riwrh *) wqe, T3_WR_QP_MOD, 0, 0,
+ 		       T3_CTL_QP_TID, 7, T3_SOPEOP);
+ 	wqe->flags = cpu_to_be32(MODQP_WRITE_EC);
+@@ -833,7 +843,7 @@ int cxio_rdma_init(struct cxio_rdev *rdev_p, struct t3_rdma_init_attr *attr)
+ 	if (!skb)
+ 		return -ENOMEM;
+ 	pr_debug("%s rdev_p %p\n", __func__, rdev_p);
+-	wqe = __skb_put(skb, sizeof(*wqe));
++	wqe = (struct t3_rdma_init_wr *)__skb_put(skb, sizeof(*wqe));
+ 	wqe->wrh.op_seop_flags = cpu_to_be32(V_FW_RIWR_OP(T3_WR_INIT));
+ 	wqe->wrh.gen_tid_len = cpu_to_be32(V_FW_RIWR_TID(attr->tid) |
+ 					   V_FW_RIWR_LEN(sizeof(*wqe) >> 3));
+diff --git a/drivers/infiniband/hw/cxgb3/iwch_cm.c b/drivers/infiniband/hw/cxgb3/iwch_cm.c
+index 0489b1f..2e3da2a 100644
+--- a/drivers/infiniband/hw/cxgb3/iwch_cm.c
++++ b/drivers/infiniband/hw/cxgb3/iwch_cm.c
+@@ -181,7 +181,7 @@ static void release_tid(struct t3cdev *tdev, u32 hwtid, struct sk_buff *skb)
+ 	skb = get_skb(skb, sizeof *req, GFP_KERNEL);
+ 	if (!skb)
+ 		return;
+-	req = skb_put(skb, sizeof(*req));
++	req = (struct cpl_tid_release *)skb_put(skb, sizeof(*req));
+ 	req->wr.wr_hi = htonl(V_WR_OP(FW_WROPCODE_FORWARD));
+ 	OPCODE_TID(req) = htonl(MK_OPCODE_TID(CPL_TID_RELEASE, hwtid));
+ 	skb->priority = CPL_PRIORITY_SETUP;
+@@ -196,7 +196,7 @@ int iwch_quiesce_tid(struct iwch_ep *ep)
+ 
+ 	if (!skb)
+ 		return -ENOMEM;
+-	req = skb_put(skb, sizeof(*req));
++	req = (struct cpl_set_tcb_field *)skb_put(skb, sizeof(*req));
+ 	req->wr.wr_hi = htonl(V_WR_OP(FW_WROPCODE_FORWARD));
+ 	req->wr.wr_lo = htonl(V_WR_TID(ep->hwtid));
+ 	OPCODE_TID(req) = htonl(MK_OPCODE_TID(CPL_SET_TCB_FIELD, ep->hwtid));
+@@ -217,7 +217,7 @@ int iwch_resume_tid(struct iwch_ep *ep)
+ 
+ 	if (!skb)
+ 		return -ENOMEM;
+-	req = skb_put(skb, sizeof(*req));
++	req = (struct cpl_set_tcb_field *)skb_put(skb, sizeof(*req));
+ 	req->wr.wr_hi = htonl(V_WR_OP(FW_WROPCODE_FORWARD));
+ 	req->wr.wr_lo = htonl(V_WR_TID(ep->hwtid));
+ 	OPCODE_TID(req) = htonl(MK_OPCODE_TID(CPL_SET_TCB_FIELD, ep->hwtid));
+@@ -404,7 +404,7 @@ static int send_halfclose(struct iwch_ep *ep, gfp_t gfp)
+ 	}
+ 	skb->priority = CPL_PRIORITY_DATA;
+ 	set_arp_failure_handler(skb, arp_failure_discard);
+-	req = skb_put(skb, sizeof(*req));
++	req = (struct cpl_close_con_req *)skb_put(skb, sizeof(*req));
+ 	req->wr.wr_hi = htonl(V_WR_OP(FW_WROPCODE_OFLD_CLOSE_CON));
+ 	req->wr.wr_lo = htonl(V_WR_TID(ep->hwtid));
+ 	OPCODE_TID(req) = htonl(MK_OPCODE_TID(CPL_CLOSE_CON_REQ, ep->hwtid));
+@@ -423,7 +423,12 @@ static int send_abort(struct iwch_ep *ep, struct sk_buff *skb, gfp_t gfp)
+ 	}
+ 	skb->priority = CPL_PRIORITY_DATA;
+ 	set_arp_failure_handler(skb, abort_arp_failure);
++#ifdef HAVE_SKB_PUT_ZERO
+ 	req = skb_put_zero(skb, sizeof(*req));
++#else
++	req = (struct cpl_abort_req *)skb_put(skb, sizeof(*req));
++	memset(req, 0, sizeof(*req));
++#endif
+ 	req->wr.wr_hi = htonl(V_WR_OP(FW_WROPCODE_OFLD_HOST_ABORT_CON_REQ));
+ 	req->wr.wr_lo = htonl(V_WR_TID(ep->hwtid));
+ 	OPCODE_TID(req) = htonl(MK_OPCODE_TID(CPL_ABORT_REQ, ep->hwtid));
+@@ -461,7 +466,7 @@ static int send_connect(struct iwch_ep *ep)
+ 	skb->priority = CPL_PRIORITY_SETUP;
+ 	set_arp_failure_handler(skb, act_open_req_arp_failure);
+ 
+-	req = skb_put(skb, sizeof(*req));
++	req = (struct cpl_act_open_req *)skb_put(skb, sizeof(*req));
+ 	req->wr.wr_hi = htonl(V_WR_OP(FW_WROPCODE_FORWARD));
+ 	OPCODE_TID(req) = htonl(MK_OPCODE_TID(CPL_ACT_OPEN_REQ, ep->atid));
+ 	req->local_port = ep->com.local_addr.sin_port;
+@@ -519,7 +524,7 @@ static void send_mpa_req(struct iwch_ep *ep, struct sk_buff *skb)
+ 	set_arp_failure_handler(skb, arp_failure_discard);
+ 	skb_reset_transport_header(skb);
+ 	len = skb->len;
+-	req = skb_push(skb, sizeof(*req));
++	req = (struct tx_data_wr *)skb_push(skb, sizeof(*req));
+ 	req->wr_hi = htonl(V_WR_OP(FW_WROPCODE_OFLD_TX_DATA)|F_WR_COMPL);
+ 	req->wr_lo = htonl(V_WR_TID(ep->hwtid));
+ 	req->len = htonl(len);
+@@ -552,7 +557,7 @@ static int send_mpa_reject(struct iwch_ep *ep, const void *pdata, u8 plen)
+ 		return -ENOMEM;
+ 	}
+ 	skb_reserve(skb, sizeof(*req));
+-	mpa = skb_put(skb, mpalen);
++	mpa = (struct mpa_message *)skb_put(skb, mpalen);
+ 	memset(mpa, 0, sizeof(*mpa));
+ 	memcpy(mpa->key, MPA_KEY_REP, sizeof(mpa->key));
+ 	mpa->flags = MPA_REJECT;
+@@ -570,7 +575,7 @@ static int send_mpa_reject(struct iwch_ep *ep, const void *pdata, u8 plen)
+ 	skb->priority = CPL_PRIORITY_DATA;
+ 	set_arp_failure_handler(skb, arp_failure_discard);
+ 	skb_reset_transport_header(skb);
+-	req = skb_push(skb, sizeof(*req));
++	req = (struct tx_data_wr *)skb_push(skb, sizeof(*req));
+ 	req->wr_hi = htonl(V_WR_OP(FW_WROPCODE_OFLD_TX_DATA)|F_WR_COMPL);
+ 	req->wr_lo = htonl(V_WR_TID(ep->hwtid));
+ 	req->len = htonl(mpalen);
+@@ -602,7 +607,7 @@ static int send_mpa_reply(struct iwch_ep *ep, const void *pdata, u8 plen)
+ 	}
+ 	skb->priority = CPL_PRIORITY_DATA;
+ 	skb_reserve(skb, sizeof(*req));
+-	mpa = skb_put(skb, mpalen);
++	mpa = (struct mpa_message *)skb_put(skb, mpalen);
+ 	memset(mpa, 0, sizeof(*mpa));
+ 	memcpy(mpa->key, MPA_KEY_REP, sizeof(mpa->key));
+ 	mpa->flags = (ep->mpa_attr.crc_enabled ? MPA_CRC : 0) |
+@@ -621,7 +626,7 @@ static int send_mpa_reply(struct iwch_ep *ep, const void *pdata, u8 plen)
+ 	set_arp_failure_handler(skb, arp_failure_discard);
+ 	skb_reset_transport_header(skb);
+ 	len = skb->len;
+-	req = skb_push(skb, sizeof(*req));
++	req = (struct tx_data_wr *)skb_push(skb, sizeof(*req));
+ 	req->wr_hi = htonl(V_WR_OP(FW_WROPCODE_OFLD_TX_DATA)|F_WR_COMPL);
+ 	req->wr_lo = htonl(V_WR_TID(ep->hwtid));
+ 	req->len = htonl(len);
+@@ -806,7 +811,7 @@ static int update_rx_credits(struct iwch_ep *ep, u32 credits)
+ 		return 0;
+ 	}
+ 
+-	req = skb_put(skb, sizeof(*req));
++	req = (struct cpl_rx_data_ack *)skb_put(skb, sizeof(*req));
+ 	req->wr.wr_hi = htonl(V_WR_OP(FW_WROPCODE_FORWARD));
+ 	OPCODE_TID(req) = htonl(MK_OPCODE_TID(CPL_RX_DATA_ACK, ep->hwtid));
+ 	req->credit_dack = htonl(V_RX_CREDITS(credits) | V_RX_FORCE_ACK(1));
+@@ -1211,7 +1216,7 @@ static int listen_start(struct iwch_listen_ep *ep)
+ 		return -ENOMEM;
+ 	}
+ 
+-	req = skb_put(skb, sizeof(*req));
++	req = (struct cpl_pass_open_req *)skb_put(skb, sizeof(*req));
+ 	req->wr.wr_hi = htonl(V_WR_OP(FW_WROPCODE_FORWARD));
+ 	OPCODE_TID(req) = htonl(MK_OPCODE_TID(CPL_PASS_OPEN_REQ, ep->stid));
+ 	req->local_port = ep->com.local_addr.sin_port;
+@@ -1252,7 +1257,7 @@ static int listen_stop(struct iwch_listen_ep *ep)
+ 		pr_err("%s - failed to alloc skb\n", __func__);
+ 		return -ENOMEM;
+ 	}
+-	req = skb_put(skb, sizeof(*req));
++	req = (struct cpl_close_listserv_req *)skb_put(skb, sizeof(*req));
+ 	req->wr.wr_hi = htonl(V_WR_OP(FW_WROPCODE_FORWARD));
+ 	req->cpu_idx = 0;
+ 	OPCODE_TID(req) = htonl(MK_OPCODE_TID(CPL_CLOSE_LISTSRV_REQ, ep->stid));
+@@ -1624,7 +1629,7 @@ static int peer_abort(struct t3cdev *tdev, struct sk_buff *skb, void *ctx)
+ 		goto out;
+ 	}
+ 	rpl_skb->priority = CPL_PRIORITY_DATA;
+-	rpl = skb_put(rpl_skb, sizeof(*rpl));
++	rpl = (struct cpl_abort_rpl *)skb_put(rpl_skb, sizeof(*rpl));
+ 	rpl->wr.wr_hi = htonl(V_WR_OP(FW_WROPCODE_OFLD_HOST_ABORT_CON_RPL));
+ 	rpl->wr.wr_lo = htonl(V_WR_TID(ep->hwtid));
+ 	OPCODE_TID(rpl) = htonl(MK_OPCODE_TID(CPL_ABORT_RPL, ep->hwtid));
+diff --git a/drivers/infiniband/hw/cxgb3/iwch_cm.h b/drivers/infiniband/hw/cxgb3/iwch_cm.h
+index cc7fe64..a1ca134 100644
+--- a/drivers/infiniband/hw/cxgb3/iwch_cm.h
++++ b/drivers/infiniband/hw/cxgb3/iwch_cm.h
+@@ -53,6 +53,7 @@
+ #define MPA_MARKERS		0x80
+ #define MPA_FLAGS_MASK		0xE0
+ 
++#ifdef HAVE_KREF_READ
+ #define put_ep(ep) {							\
+ 	pr_debug("put_ep (via %s:%u) ep %p refcnt %d\n",		\
+ 		 __func__, __LINE__, ep, kref_read(&((ep)->kref)));	\
+@@ -65,6 +66,20 @@
+ 		 __func__, __LINE__, ep, kref_read(&((ep)->kref)));	\
+ 	kref_get(&((ep)->kref));					\
+ }
++#else
++#define put_ep(ep) {							\
++	pr_debug("put_ep (via %s:%u) ep %p refcnt %d\n",		\
++		 __func__, __LINE__, ep, atomic_read(&((ep)->kref.refcount)));	\
++	WARN_ON(atomic_read(&((ep)->kref.refcount)) < 1);				\
++	kref_put(&((ep)->kref), __free_ep);				\
++}
++
++#define get_ep(ep) {							\
++	pr_debug("get_ep (via %s:%u) ep %p, refcnt %d\n",		\
++		 __func__, __LINE__, ep, atomic_read(&((ep)->kref.refcount)));	\
++	kref_get(&((ep)->kref));					\
++}
++#endif
+ 
+ struct mpa_message {
+ 	u8 key[16];
+diff --git a/drivers/infiniband/hw/cxgb3/iwch_qp.c b/drivers/infiniband/hw/cxgb3/iwch_qp.c
+index 3871e1f..8421939 100644
+--- a/drivers/infiniband/hw/cxgb3/iwch_qp.c
++++ b/drivers/infiniband/hw/cxgb3/iwch_qp.c
+@@ -670,7 +670,12 @@ int iwch_post_zb_read(struct iwch_ep *ep)
+ 		pr_err("%s cannot send zb_read!!\n", __func__);
+ 		return -ENOMEM;
+ 	}
++#ifdef HAVE_SKB_PUT_ZERO
+ 	wqe = skb_put_zero(skb, sizeof(struct t3_rdma_read_wr));
++#else
++	wqe = (union t3_wr *)skb_put(skb, sizeof(struct t3_rdma_read_wr));
++	memset(wqe, 0, sizeof(struct t3_rdma_read_wr));
++#endif
+ 	wqe->read.rdmaop = T3_READ_REQ;
+ 	wqe->read.reserved[0] = 0;
+ 	wqe->read.reserved[1] = 0;
+@@ -701,7 +706,12 @@ int iwch_post_terminate(struct iwch_qp *qhp, struct respQ_msg_t *rsp_msg)
+ 		pr_err("%s cannot send TERMINATE!\n", __func__);
+ 		return -ENOMEM;
+ 	}
++#ifdef HAVE_SKB_PUT_ZERO
+ 	wqe = skb_put_zero(skb, 40);
++#else
++	wqe = (union t3_wr *)skb_put(skb, 40);
++	memset(wqe, 0, 40);
++#endif
+ 	wqe->send.rdmaop = T3_TERMINATE;
+ 
+ 	/* immediate data length */
+@@ -962,7 +972,11 @@ int iwch_modify_qp(struct iwch_dev *rhp, struct iwch_qp *qhp,
+ 	case IWCH_QP_STATE_RTS:
+ 		switch (attrs->next_state) {
+ 		case IWCH_QP_STATE_CLOSING:
++#ifdef HAVE_KREF_READ
+ 			BUG_ON(kref_read(&qhp->ep->com.kref) < 2);
++#else
++			BUG_ON(atomic_read(&qhp->ep->com.kref.refcount) < 2);
++#endif
+ 			qhp->attr.state = IWCH_QP_STATE_CLOSING;
+ 			if (!internal) {
+ 				abort=0;
+-- 
+2.9.5
+
