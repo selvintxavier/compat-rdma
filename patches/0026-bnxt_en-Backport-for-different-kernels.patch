@@ -1,0 +1,431 @@
+From f09c7d14d4482f78ed5a73d3eb53cc0660e0a18c Mon Sep 17 00:00:00 2001
+From: Naresh PBS <nareshkumar.pbs@broadcom.com>
+Date: Mon, 27 Aug 2018 01:10:47 -0400
+Subject: [PATCH] bnxt_en: Backport for different kernels
+
+Adding backport for SLES12 Sp3, SLES 15, RHEL 7.4 and kernel 4.17
+
+Signed-off-by: Naresh PBS <nareshkumar.pbs@broadcom.com>
+Signed-off-by: Selvin Xavier <selvin.xavier@broadcom.com>
+---
+ drivers/net/ethernet/broadcom/bnxt/bnxt.c         | 114 +++++++++++++++++++++-
+ drivers/net/ethernet/broadcom/bnxt/bnxt.h         |  37 +++++++
+ drivers/net/ethernet/broadcom/bnxt/bnxt_ethtool.c |   2 +
+ drivers/net/ethernet/broadcom/bnxt/bnxt_ethtool.h |   3 +
+ drivers/net/ethernet/broadcom/bnxt/bnxt_xdp.c     |  16 +++
+ drivers/net/ethernet/broadcom/bnxt/bnxt_xdp.h     |   8 ++
+ 6 files changed, 177 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/ethernet/broadcom/bnxt/bnxt.c b/drivers/net/ethernet/broadcom/bnxt/bnxt.c
+index ba5af47..1a319fd 100644
+--- a/drivers/net/ethernet/broadcom/bnxt/bnxt.c
++++ b/drivers/net/ethernet/broadcom/bnxt/bnxt.c
+@@ -35,7 +35,9 @@
+ #include <linux/if_vlan.h>
+ #include <linux/if_bridge.h>
+ #include <linux/rtc.h>
++#ifdef HAVE_NDO_XDP_EXTENDED
+ #include <linux/bpf.h>
++#endif
+ #include <net/ip.h>
+ #include <net/tcp.h>
+ #include <net/udp.h>
+@@ -271,12 +273,16 @@ const u16 bnxt_lhint_arr[] = {
+ 
+ static u16 bnxt_xmit_get_cfa_action(struct sk_buff *skb)
+ {
++#ifdef CONFIG_VF_REPS
+ 	struct metadata_dst *md_dst = skb_metadata_dst(skb);
+ 
+ 	if (!md_dst || md_dst->type != METADATA_HW_PORT_MUX)
+ 		return 0;
+ 
+ 	return md_dst->u.port_info.port_id;
++#else
++	return 0;
++#endif
+ }
+ 
+ static netdev_tx_t bnxt_start_xmit(struct sk_buff *skb, struct net_device *dev)
+@@ -2008,7 +2014,11 @@ static int bnxt_poll_nitroa0(struct napi_struct *napi, int budget)
+ 			      DB_KEY_RX | rxr->rx_agg_prod);
+ 
+ 	if (!bnxt_has_work(bp, cpr) && rx_pkts < budget) {
++#ifdef HAVE_NAPI_COMPLETE_DONE
+ 		napi_complete_done(napi, rx_pkts);
++#else
++		napi_complete(napi);
++#endif
+ 		BNXT_CP_DB_REARM(cpr->cp_doorbell, cpr->cp_raw_cons);
+ 	}
+ 	return rx_pkts;
+@@ -2028,9 +2038,14 @@ static int bnxt_poll(struct napi_struct *napi, int budget)
+ 			break;
+ 
+ 		if (!bnxt_has_work(bp, cpr)) {
+-			if (napi_complete_done(napi, work_done))
+-				BNXT_CP_DB_REARM(cpr->cp_doorbell,
++#ifdef HAVE_NAPI_COMPLETE_DONE
++			napi_complete_done(napi, work_done);
++			BNXT_CP_DB_REARM(cpr->cp_doorbell,
+ 						 cpr->cp_raw_cons);
++#else
++			napi_complete(napi);
++			BNXT_CP_DB_REARM(cpr->cp_doorbell, cpr->cp_raw_cons);
++#endif
+ 			break;
+ 		}
+ 	}
+@@ -2264,8 +2279,10 @@ static void bnxt_free_rx_rings(struct bnxt *bp)
+ 		struct bnxt_rx_ring_info *rxr = &bp->rx_ring[i];
+ 		struct bnxt_ring_struct *ring;
+ 
++#ifdef HAVE_NDO_XDP_EXTENDED
+ 		if (rxr->xdp_prog)
+ 			bpf_prog_put(rxr->xdp_prog);
++#endif
+ #ifdef HAVE_XDP_RXQ_INFO
+ 		if (xdp_rxq_info_is_reg(&rxr->xdp_rxq))
+ 			xdp_rxq_info_unreg(&rxr->xdp_rxq);
+@@ -2570,6 +2587,7 @@ static int bnxt_init_one_rx_ring(struct bnxt *bp, int ring_nr)
+ 	ring = &rxr->rx_ring_struct;
+ 	bnxt_init_rxbd_pages(ring, type);
+ 
++#ifdef HAVE_NDO_XDP_EXTENDED
+ 	if (BNXT_RX_PAGE_MODE(bp) && bp->xdp_prog) {
+ 		rxr->xdp_prog = bpf_prog_add(bp->xdp_prog, 1);
+ 		if (IS_ERR(rxr->xdp_prog)) {
+@@ -2579,6 +2597,7 @@ static int bnxt_init_one_rx_ring(struct bnxt *bp, int ring_nr)
+ 			return rc;
+ 		}
+ 	}
++#endif
+ 	prod = rxr->rx_prod;
+ 	for (i = 0; i < bp->rx_ring_size; i++) {
+ 		if (bnxt_alloc_rx_data(bp, rxr, prod, GFP_KERNEL) != 0) {
+@@ -6914,8 +6933,12 @@ static int __bnxt_open_nic(struct bnxt *bp, bool irq_re_init, bool link_re_init)
+ 			netdev_warn(bp->dev, "failed to update phy settings\n");
+ 	}
+ 
++#ifdef HAVE_KERNEL_WITH_VXLAN_SUPPORT_ON
++#if defined(HAVE_NDO_UDP_TUNNEL_ADD) || defined(HAVE_NDO_UDP_TUNNEL_ADD_EXTENDED)
+ 	if (irq_re_init)
+ 		udp_tunnel_get_rx_info(bp->dev);
++#endif
++#endif
+ 
+ 	set_bit(BNXT_STATE_OPEN, &bp->state);
+ 	bnxt_enable_int(bp);
+@@ -7087,7 +7110,11 @@ static int bnxt_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
+ 	return -EOPNOTSUPP;
+ }
+ 
++#ifdef HAVE_NDO_GET_STATS64_RET_VOID
+ static void
++#else
++static struct rtnl_link_stats64 *
++#endif
+ bnxt_get_stats64(struct net_device *dev, struct rtnl_link_stats64 *stats)
+ {
+ 	u32 i;
+@@ -7100,7 +7127,11 @@ bnxt_get_stats64(struct net_device *dev, struct rtnl_link_stats64 *stats)
+ 	smp_mb__after_atomic();
+ 	if (!test_bit(BNXT_STATE_OPEN, &bp->state)) {
+ 		clear_bit(BNXT_STATE_READ_STATS, &bp->state);
++#ifdef HAVE_NDO_GET_STATS64_RET_VOID
+ 		return;
++#else
++		return NULL;
++#endif
+ 	}
+ 
+ 	/* TODO check if we need to synchronize with bnxt_close path */
+@@ -7149,6 +7180,11 @@ bnxt_get_stats64(struct net_device *dev, struct rtnl_link_stats64 *stats)
+ 		stats->tx_errors = le64_to_cpu(tx->tx_err);
+ 	}
+ 	clear_bit(BNXT_STATE_READ_STATS, &bp->state);
++#ifdef HAVE_NDO_GET_STATS64_RET_VOID
++		return;
++#else
++		return stats;
++#endif
+ }
+ 
+ static bool bnxt_mc_list_updated(struct bnxt *bp, u32 *rx_mask)
+@@ -7972,7 +8008,6 @@ static int bnxt_setup_tc_block(struct net_device *dev,
+ }
+ 
+ #else
+-
+ static int bnxt_setup_flower(struct net_device *dev,
+ 			     struct tc_cls_flower_offload *cls_flower)
+ {
+@@ -7986,6 +8021,68 @@ static int bnxt_setup_flower(struct net_device *dev,
+ #endif
+ #endif
+ 
++#if !defined(HAVE_NDO_SETUP_TC_RH72)
++#ifdef HAVE_NDO_SETUP_TC_TAKES_TC_SETUP_TYPE
++static int bnxt_setup_tc(struct net_device *dev, enum tc_setup_type type,
++			 void *type_data)
++{
++	switch (type) {
++#ifdef CONFIG_BNXT_FLOWER_OFFLOAD
++#ifdef HAVE_TC_SETUP_BLOCK
++	case TC_SETUP_BLOCK:
++		return bnxt_setup_tc_block(dev, type_data);
++#else
++	case TC_SETUP_CLSFLOWER: {
++		struct tc_cls_flower_offload *flow_offl;
++
++		flow_offl = (struct tc_cls_flower_offload *)type_data;
++		return bnxt_setup_flower(dev, type_data, flow_offl->egress_dev);
++	}
++#endif
++#endif
++	case TC_SETUP_QDISC_MQPRIO: {
++		struct tc_mqprio_qopt *mqprio = type_data;
++
++		mqprio->hw = TC_MQPRIO_HW_OFFLOAD_TCS;
++
++		return bnxt_setup_mq_tc(dev, mqprio->num_tc);
++	}
++	default:
++		return -EOPNOTSUPP;
++	}
++}
++
++#else
++#ifdef HAVE_TC_TO_NETDEV_TC 
++#ifdef HAVE_CHAIN_INDEX
++static int bnxt_setup_tc(struct net_device *dev, u32 handle, u32 chain_index,
++			 __be16 proto, struct tc_to_netdev *ntc)
++#else
++static int bnxt_setup_tc(struct net_device *dev, u32 handle, __be16 proto,
++			 struct tc_to_netdev *ntc)
++#endif
++{
++	switch (ntc->type) {
++#ifdef CONFIG_BNXT_FLOWER_OFFLOAD
++	case TC_SETUP_CLSFLOWER:
++		return bnxt_setup_flower(dev, ntc->cls_flower, ntc->egress_dev);
++#endif
++	case TC_SETUP_MQPRIO:
++#ifdef HAVE_MQPRIO_QOPT
++		ntc->mqprio->hw = TC_MQPRIO_HW_OFFLOAD_TCS;
++
++		return bnxt_setup_mq_tc(dev, ntc->mqprio->num_tc);
++#else
++		return bnxt_setup_mq_tc(dev, ntc->tc);
++#endif
++	default:
++		return -EOPNOTSUPP;
++	}
++}
++#endif /* HAVE_TC_TO_NETDEV_TC */
++#endif /* HAVE_NDO_SETUP_TC_TAKES_TC_SETUP_TYPE */
++#endif /* HAVE_NDO_SETUP_TC_RH72 */
++
+ #ifdef CONFIG_RFS_ACCEL
+ static bool bnxt_fltr_match(struct bnxt_ntuple_filter *f1,
+ 			    struct bnxt_ntuple_filter *f2)
+@@ -8258,9 +8355,16 @@ static const struct net_device_ops bnxt_netdev_ops = {
+ #ifdef CONFIG_NET_POLL_CONTROLLER
+ 	.ndo_poll_controller	= bnxt_poll_controller,
+ #endif
++
+ #ifdef HAVE_NDO_SETUP_TC
++#if (defined(HAVE_TC_TO_NETDEV_TC) || defined(HAVE_NDO_SETUP_TC_TAKES_TC_SETUP_TYPE)) && \
++    !defined(HAVE_NDO_SETUP_TC_RH72)
+ 	.ndo_setup_tc           = bnxt_setup_tc,
++#else
++	.ndo_setup_tc           = bnxt_setup_mq_tc,
++#endif
+ #endif
++
+ #ifdef CONFIG_RFS_ACCEL
+ 	.ndo_rx_flow_steer	= bnxt_rx_flow_steer,
+ #endif
+@@ -8587,7 +8691,9 @@ static int bnxt_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
+ 	dev->netdev_ops = &bnxt_netdev_ops;
+ 	dev->watchdog_timeo = BNXT_TX_TIMEOUT;
+ 	dev->ethtool_ops = &bnxt_ethtool_ops;
++#ifdef CONFIG_VF_REPS
+ 	SWITCHDEV_SET_OPS(dev, &bnxt_switchdev_ops);
++#endif
+ 	pci_set_drvdata(pdev, dev);
+ 
+ 	rc = bnxt_alloc_hwrm_resources(bp);
+@@ -8628,8 +8734,10 @@ static int bnxt_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
+ 			NETIF_F_GSO_UDP_TUNNEL | NETIF_F_GSO_GRE |
+ 			NETIF_F_GSO_UDP_TUNNEL_CSUM | NETIF_F_GSO_GRE_CSUM |
+ 			NETIF_F_GSO_IPXIP4 | NETIF_F_GSO_PARTIAL;
++#ifdef HAVE_GSO_PARTIAL_FEATURES
+ 	dev->gso_partial_features = NETIF_F_GSO_UDP_TUNNEL_CSUM |
+ 				    NETIF_F_GSO_GRE_CSUM;
++#endif
+ 	dev->vlan_features = dev->hw_features | NETIF_F_HIGHDMA;
+ 	dev->hw_features |= NETIF_F_HW_VLAN_CTAG_RX | NETIF_F_HW_VLAN_CTAG_TX |
+ 			    NETIF_F_HW_VLAN_STAG_RX | NETIF_F_HW_VLAN_STAG_TX;
+diff --git a/drivers/net/ethernet/broadcom/bnxt/bnxt.h b/drivers/net/ethernet/broadcom/bnxt/bnxt.h
+index 7040230..c6dcbf0 100644
+--- a/drivers/net/ethernet/broadcom/bnxt/bnxt.h
++++ b/drivers/net/ethernet/broadcom/bnxt/bnxt.h
+@@ -36,12 +36,22 @@
+ #define dma_unmap_single_attrs(dev, dma_addr, size, dir, attrs) \
+         dma_unmap_single_attrs(dev, dma_addr, size, dir, NULL)
+ 
++#ifdef HAVE_DMA_MAP_PAGE_ATTRS
+ #define dma_map_page_attrs(dev, page, offset, size, dir, attrs) \
+         dma_map_page_attrs(dev, page, offset, size, dir, NULL)
+ 
+ #define dma_unmap_page_attrs(dev, dma_addr, size, dir, attrs) \
+         dma_unmap_page_attrs(dev, dma_addr, size, dir, NULL)
+ #endif
++#endif
++
++#ifndef HAVE_DMA_MAP_PAGE_ATTRS
++#define dma_map_page_attrs(dev, page, offset, size, dir, attrs) \
++        dma_map_page(dev, page, offset, size, dir)
++
++#define dma_unmap_page_attrs(dev, dma_addr, size, dir, attrs) \
++        dma_unmap_page(dev, dma_addr, size, dir)
++#endif
+ 
+ #ifndef HAVE_XDP_SET_DATA_META_INVALID
+ #define xdp_set_data_meta_invalid(xdp)
+@@ -61,10 +71,26 @@
+ #define NETIF_F_GSO_SIT         0
+ #endif
+ 
++#ifndef NETIF_F_GSO_PARTIAL
++#define NETIF_F_GSO_PARTIAL     0
++#else
++#define HAVE_GSO_PARTIAL_FEATURES       1
++#endif
++
++#ifndef HAVE_NDO_XDP_EXTENDED
++struct netdev_bpf;
++#endif
++
+ #ifndef NETIF_F_GSO_IPXIP4
+ #define NETIF_F_GSO_IPXIP4      (NETIF_F_GSO_IPIP | NETIF_F_GSO_SIT)
+ #endif
+ 
++
++
++#ifndef XDP_PACKET_HEADROOM
++#define XDP_PACKET_HEADROOM     0
++#endif
++
+ struct tx_bd {
+ 	__le32 tx_bd_len_flags_type;
+ 	#define TX_BD_TYPE					(0x3f << 0)
+@@ -1522,4 +1548,15 @@ void bnxt_dim_work(struct work_struct *work);
+ #endif
+ int bnxt_hwrm_set_ring_coal(struct bnxt *bp, struct bnxt_napi *bnapi);
+ 
++
++#if defined(CONFIG_BNXT_SRIOV) && defined(HAVE_DEVLINK) && \
++        defined(CONFIG_NET_SWITCHDEV) && defined(HAVE_METADATA_HW_PORT_MUX) && \
++        (LINUX_VERSION_CODE > 0x030a00)
++#define CONFIG_VF_REPS          1
++#ifndef SWITCHDEV_SET_OPS
++#define SWITCHDEV_SET_OPS(netdev, ops) ((netdev)->switchdev_ops = (ops))
++#endif
++#endif
++
++
+ #endif
+diff --git a/drivers/net/ethernet/broadcom/bnxt/bnxt_ethtool.c b/drivers/net/ethernet/broadcom/bnxt/bnxt_ethtool.c
+index 8ba14ae..ac32c1c 100644
+--- a/drivers/net/ethernet/broadcom/bnxt/bnxt_ethtool.c
++++ b/drivers/net/ethernet/broadcom/bnxt/bnxt_ethtool.c
+@@ -2468,7 +2468,9 @@ static int bnxt_run_loopback(struct bnxt *bp)
+ 		dev_kfree_skb(skb);
+ 		return -EIO;
+ 	}
++#ifdef HAVE_NDO_XDP_EXTENDED
+ 	bnxt_xmit_xdp(bp, txr, map, pkt_size, 0);
++#endif
+ 
+ 	/* Sync BD data before updating doorbell */
+ 	wmb();
+diff --git a/drivers/net/ethernet/broadcom/bnxt/bnxt_ethtool.h b/drivers/net/ethernet/broadcom/bnxt/bnxt_ethtool.h
+index 836ef68..eea82f3 100644
+--- a/drivers/net/ethernet/broadcom/bnxt/bnxt_ethtool.h
++++ b/drivers/net/ethernet/broadcom/bnxt/bnxt_ethtool.h
+@@ -45,4 +45,7 @@ u16 bnxt_get_fw_auto_link_speeds(u32);
+ void bnxt_ethtool_init(struct bnxt *bp);
+ void bnxt_ethtool_free(struct bnxt *bp);
+ 
++#ifndef ETH_RESET_AP
++#define ETH_RESET_AP (1<<8)
++#endif
+ #endif
+diff --git a/drivers/net/ethernet/broadcom/bnxt/bnxt_xdp.c b/drivers/net/ethernet/broadcom/bnxt/bnxt_xdp.c
+index ee2a0c9..b2544c6 100644
+--- a/drivers/net/ethernet/broadcom/bnxt/bnxt_xdp.c
++++ b/drivers/net/ethernet/broadcom/bnxt/bnxt_xdp.c
+@@ -12,13 +12,17 @@
+ #include <linux/netdevice.h>
+ #include <linux/etherdevice.h>
+ #include <linux/if_vlan.h>
++#ifdef HAVE_NDO_XDP_EXTENDED
+ #include <linux/bpf.h>
++#endif
+ #include <linux/bpf_trace.h>
+ #include <linux/filter.h>
+ #include "bnxt_hsi.h"
+ #include "bnxt.h"
+ #include "bnxt_xdp.h"
+ 
++#ifdef HAVE_NDO_XDP_EXTENDED
++
+ void bnxt_xmit_xdp(struct bnxt *bp, struct bnxt_tx_ring_info *txr,
+ 		   dma_addr_t mapping, u32 len, u16 rx_prod)
+ {
+@@ -231,3 +235,15 @@ int bnxt_xdp(struct net_device *dev, struct netdev_bpf *xdp)
+ 	}
+ 	return rc;
+ }
++#else
++void bnxt_tx_int_xdp(struct bnxt *bp, struct bnxt_napi *bnapi, int nr_pkts)
++{
++}
++
++bool bnxt_rx_xdp(struct bnxt *bp, struct bnxt_rx_ring_info *rxr, u16 cons,
++                 void *page, u8 **data_ptr, unsigned int *len, u8 *event)
++{
++        return false;
++}
++
++#endif
+diff --git a/drivers/net/ethernet/broadcom/bnxt/bnxt_xdp.h b/drivers/net/ethernet/broadcom/bnxt/bnxt_xdp.h
+index 414b748..ac37edd 100644
+--- a/drivers/net/ethernet/broadcom/bnxt/bnxt_xdp.h
++++ b/drivers/net/ethernet/broadcom/bnxt/bnxt_xdp.h
+@@ -10,6 +10,7 @@
+ #ifndef BNXT_XDP_H
+ #define BNXT_XDP_H
+ 
++#ifdef HAVE_NDO_XDP_EXTENDED
+ void bnxt_xmit_xdp(struct bnxt *bp, struct bnxt_tx_ring_info *txr,
+ 		   dma_addr_t mapping, u32 len, u16 rx_prod);
+ void bnxt_tx_int_xdp(struct bnxt *bp, struct bnxt_napi *bnapi, int nr_pkts);
+@@ -17,5 +18,12 @@ bool bnxt_rx_xdp(struct bnxt *bp, struct bnxt_rx_ring_info *rxr, u16 cons,
+ 		 struct page *page, u8 **data_ptr, unsigned int *len,
+ 		 u8 *event);
+ int bnxt_xdp(struct net_device *dev, struct netdev_bpf *xdp);
++#else
++
++void bnxt_tx_int_xdp(struct bnxt *bp, struct bnxt_napi *bnapi, int nr_pkts);
++bool bnxt_rx_xdp(struct bnxt *bp, struct bnxt_rx_ring_info *rxr, u16 cons,
++                 void *page, u8 **data_ptr, unsigned int *len, u8 *event);
++
++#endif
+ 
+ #endif
+-- 
+1.8.3.1
+
