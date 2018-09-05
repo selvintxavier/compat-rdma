@@ -1,0 +1,291 @@
+From b1233de057b8152569881c113aaeb0993c360480 Mon Sep 17 00:00:00 2001
+From: Michal Kalderon <michal.kalderon@cavium.com>
+Date: Wed, 5 Sep 2018 12:42:53 +0300
+Subject: [PATCH] qede: Backport to RHEL7.4
+
+Some fixes required for RHEL7.4 compilation
+
+Signed-off-by: Michal Kalderon <michal.kalderon@cavium.com>
+---
+ drivers/net/ethernet/qlogic/qede/qede.h        |  2 ++
+ drivers/net/ethernet/qlogic/qede/qede_dcbnl.c  | 11 ++++++++-
+ drivers/net/ethernet/qlogic/qede/qede_filter.c |  2 ++
+ drivers/net/ethernet/qlogic/qede/qede_fp.c     | 17 +++++++++++++-
+ drivers/net/ethernet/qlogic/qede/qede_main.c   | 32 ++++++++++++++++++++++----
+ 5 files changed, 58 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/net/ethernet/qlogic/qede/qede.h b/drivers/net/ethernet/qlogic/qede/qede.h
+index e70c96a..0386a7a 100644
+--- a/drivers/net/ethernet/qlogic/qede/qede.h
++++ b/drivers/net/ethernet/qlogic/qede/qede.h
+@@ -518,7 +518,9 @@ void qede_fill_rss_params(struct qede_dev *edev,
+ void qede_udp_tunnel_add(struct net_device *dev, struct udp_tunnel_info *ti);
+ void qede_udp_tunnel_del(struct net_device *dev, struct udp_tunnel_info *ti);
+ 
++#ifdef HAVE_NETDEV_BPF
+ int qede_xdp(struct net_device *dev, struct netdev_bpf *xdp);
++#endif
+ 
+ #ifdef CONFIG_DCB
+ void qede_set_dcbnl_ops(struct net_device *ndev);
+diff --git a/drivers/net/ethernet/qlogic/qede/qede_dcbnl.c b/drivers/net/ethernet/qlogic/qede/qede_dcbnl.c
+index 6e7747b..355ac48 100644
+--- a/drivers/net/ethernet/qlogic/qede/qede_dcbnl.c
++++ b/drivers/net/ethernet/qlogic/qede/qede_dcbnl.c
+@@ -104,8 +104,11 @@ static u8 qede_dcbnl_getpfcstate(struct net_device *netdev)
+ 
+ 	return edev->ops->dcb->getpfcstate(edev->cdev);
+ }
+-
++#ifdef NDO_GETAPP_RETURNS_INT
+ static int qede_dcbnl_getapp(struct net_device *netdev, u8 idtype, u16 id)
++#else
++static u8 qede_dcbnl_getapp(struct net_device *netdev, u8 idtype, u16 id)
++#endif
+ {
+ 	struct qede_dev *edev = netdev_priv(netdev);
+ 
+@@ -174,8 +177,14 @@ static void qede_dcbnl_setpfcstate(struct net_device *netdev, u8 state)
+ 	return edev->ops->dcb->setpfcstate(edev->cdev, state);
+ }
+ 
++#ifdef NDO_SETAPP_RETURNS_INT
+ static int qede_dcbnl_setapp(struct net_device *netdev, u8 idtype, u16 idval,
+ 			     u8 up)
++#else
++static u8 qede_dcbnl_setapp(struct net_device *netdev, u8 idtype, u16 idval,
++			     u8 up)
++#endif
++
+ {
+ 	struct qede_dev *edev = netdev_priv(netdev);
+ 
+diff --git a/drivers/net/ethernet/qlogic/qede/qede_filter.c b/drivers/net/ethernet/qlogic/qede/qede_filter.c
+index 6687e04..9da9e1e 100644
+--- a/drivers/net/ethernet/qlogic/qede/qede_filter.c
++++ b/drivers/net/ethernet/qlogic/qede/qede_filter.c
+@@ -1066,6 +1066,7 @@ void qede_udp_tunnel_del(struct net_device *dev,
+ 	}
+ }
+ 
++#ifdef HAVE_XDP
+ static void qede_xdp_reload_func(struct qede_dev *edev,
+ 				 struct qede_reload_args *args)
+ {
+@@ -1103,6 +1104,7 @@ int qede_xdp(struct net_device *dev, struct netdev_bpf *xdp)
+ 		return -EINVAL;
+ 	}
+ }
++#endif
+ 
+ static int qede_set_mcast_rx_mac(struct qede_dev *edev,
+ 				 enum qed_filter_xcast_params_type opcode,
+diff --git a/drivers/net/ethernet/qlogic/qede/qede_fp.c b/drivers/net/ethernet/qlogic/qede/qede_fp.c
+index e906d04..766b1c9 100644
+--- a/drivers/net/ethernet/qlogic/qede/qede_fp.c
++++ b/drivers/net/ethernet/qlogic/qede/qede_fp.c
+@@ -327,6 +327,7 @@ static inline void qede_update_tx_producer(struct qede_tx_queue *txq)
+ 	wmb();
+ }
+ 
++#ifdef HAVE_XDP
+ static int qede_xdp_xmit(struct qede_dev *edev, struct qede_fastpath *fp,
+ 			 struct sw_rx_data *metadata, u16 padding, u16 length)
+ {
+@@ -371,6 +372,7 @@ static int qede_xdp_xmit(struct qede_dev *edev, struct qede_fastpath *fp,
+ 
+ 	return 0;
+ }
++#endif
+ 
+ int qede_txq_has_work(struct qede_tx_queue *txq)
+ {
+@@ -385,6 +387,7 @@ int qede_txq_has_work(struct qede_tx_queue *txq)
+ 	return hw_bd_cons != qed_chain_get_cons_idx(&txq->tx_pbl);
+ }
+ 
++#ifdef HAVE_XDP
+ static void qede_xdp_tx_int(struct qede_dev *edev, struct qede_tx_queue *txq)
+ {
+ 	u16 hw_bd_cons, idx;
+@@ -405,6 +408,7 @@ static void qede_xdp_tx_int(struct qede_dev *edev, struct qede_tx_queue *txq)
+ 		txq->xmit_pkts++;
+ 	}
+ }
++#endif
+ 
+ static int qede_tx_int(struct qede_dev *edev, struct qede_tx_queue *txq)
+ {
+@@ -988,6 +992,7 @@ static bool qede_pkt_is_ip_fragmented(struct eth_fast_path_rx_reg_cqe *cqe,
+ 	return false;
+ }
+ 
++#ifdef HAVE_XDP
+ /* Return true iff packet is to be passed to stack */
+ static bool qede_rx_xdp(struct qede_dev *edev,
+ 			struct qede_fastpath *fp,
+@@ -1060,6 +1065,7 @@ static bool qede_rx_xdp(struct qede_dev *edev,
+ 
+ 	return false;
+ }
++#endif
+ 
+ static struct sk_buff *qede_rx_allocate_skb(struct qede_dev *edev,
+ 					    struct qede_rx_queue *rxq,
+@@ -1201,7 +1207,9 @@ static int qede_rx_process_cqe(struct qede_dev *edev,
+ 			       struct qede_fastpath *fp,
+ 			       struct qede_rx_queue *rxq)
+ {
++#ifdef HAVE_XDP
+ 	struct bpf_prog *xdp_prog = READ_ONCE(rxq->xdp_prog);
++#endif
+ 	struct eth_fast_path_rx_reg_cqe *fp_cqe;
+ 	u16 len, pad, bd_cons_idx, parse_flag;
+ 	enum eth_rx_cqe_type cqe_type;
+@@ -1238,11 +1246,13 @@ static int qede_rx_process_cqe(struct qede_dev *edev,
+ 	len = le16_to_cpu(fp_cqe->len_on_first_bd);
+ 	pad = fp_cqe->placement_offset + rxq->rx_headroom;
+ 
++#ifdef HAVE_XDP
+ 	/* Run eBPF program if one is attached */
+ 	if (xdp_prog)
+ 		if (!qede_rx_xdp(edev, fp, rxq, xdp_prog, bd, fp_cqe,
+ 				 &pad, &len))
+ 			return 0;
++#endif
+ 
+ 	/* If this is an error packet then drop it */
+ 	flags = cqe->fast_path_regular.pars_flags.flags;
+@@ -1351,9 +1361,11 @@ static bool qede_poll_is_more_work(struct qede_fastpath *fp)
+ 		if (qede_has_rx_work(fp->rxq))
+ 			return true;
+ 
++#ifdef HAVE_XDP
+ 	if (fp->type & QEDE_FASTPATH_XDP)
+ 		if (qede_txq_has_work(fp->xdp_tx))
+ 			return true;
++#endif
+ 
+ 	if (likely(fp->type & QEDE_FASTPATH_TX))
+ 		if (qede_txq_has_work(fp->txq))
+@@ -1375,9 +1387,10 @@ int qede_poll(struct napi_struct *napi, int budget)
+ 	if (likely(fp->type & QEDE_FASTPATH_TX) && qede_txq_has_work(fp->txq))
+ 		qede_tx_int(edev, fp->txq);
+ 
++#ifdef HAVE_XDP
+ 	if ((fp->type & QEDE_FASTPATH_XDP) && qede_txq_has_work(fp->xdp_tx))
+ 		qede_xdp_tx_int(edev, fp->xdp_tx);
+-
++#endif
+ 	rx_work_done = (likely(fp->type & QEDE_FASTPATH_RX) &&
+ 			qede_has_rx_work(fp->rxq)) ?
+ 			qede_rx_int(fp, budget) : 0;
+@@ -1392,6 +1405,7 @@ int qede_poll(struct napi_struct *napi, int budget)
+ 		}
+ 	}
+ 
++#ifdef HAVE_XDP
+ 	if (fp->xdp_xmit) {
+ 		u16 xdp_prod = qed_chain_get_prod_idx(&fp->xdp_tx->tx_pbl);
+ 
+@@ -1399,6 +1413,7 @@ int qede_poll(struct napi_struct *napi, int budget)
+ 		fp->xdp_tx->tx_db.data.bd_prod = cpu_to_le16(xdp_prod);
+ 		qede_update_tx_producer(fp->xdp_tx);
+ 	}
++#endif
+ 
+ 	return rx_work_done;
+ }
+diff --git a/drivers/net/ethernet/qlogic/qede/qede_main.c b/drivers/net/ethernet/qlogic/qede/qede_main.c
+index 8ab2dac..07028fb 100644
+--- a/drivers/net/ethernet/qlogic/qede/qede_main.c
++++ b/drivers/net/ethernet/qlogic/qede/qede_main.c
+@@ -427,13 +427,25 @@ void qede_fill_by_demand_stats(struct qede_dev *edev)
+ 	}
+ }
+ 
+-static void qede_get_stats64(struct net_device *dev,
+-			     struct rtnl_link_stats64 *stats)
++#ifdef HAVE_NDO_GET_STATS64_RET_VOID
++void qede_get_stats64(struct net_device *dev, struct rtnl_link_stats64 *stats)
++#elif defined(HAVE_NDO_GET_STATS64)
++static
++struct rtnl_link_stats64 *qede_get_stats64(struct net_device *dev,
++					   struct rtnl_link_stats64 *stats)
++#else
++static
++struct rtnl_link_stats64 *qede_get_stats64(struct net_device *dev)
++#endif
+ {
+ 	struct qede_dev *edev = netdev_priv(dev);
++#if defined(HAVE_NDO_GET_STATS64)
+ 	struct qede_stats_common *p_common;
++#endif
+ 
+ 	qede_fill_by_demand_stats(edev);
++
++#if defined(HAVE_NDO_GET_STATS64)
+ 	p_common = &edev->stats.common;
+ 
+ 	stats->rx_packets = p_common->rx_ucast_pkts + p_common->rx_mcast_pkts +
+@@ -455,6 +467,11 @@ static void qede_get_stats64(struct net_device *dev,
+ 		stats->collisions = edev->stats.bb.tx_total_collisions;
+ 	stats->rx_crc_errors = p_common->rx_crc_errors;
+ 	stats->rx_frame_errors = p_common->rx_align_errors;
++#endif
++
++#ifndef HAVE_NDO_GET_STATS64_RET_VOID
++	return stats;
++#endif
+ }
+ 
+ #ifdef CONFIG_QED_SRIOV
+@@ -549,7 +566,11 @@ static const struct net_device_ops qede_netdev_ops = {
+ 	.ndo_vlan_rx_kill_vid = qede_vlan_rx_kill_vid,
+ 	.ndo_fix_features = qede_fix_features,
+ 	.ndo_set_features = qede_set_features,
+-	.ndo_get_stats64 = qede_get_stats64,
++#if defined(HAVE_NDO_GET_STATS64) || defined(HAVE_NDO_GET_STATS64_RET_VOID)
++        .ndo_get_stats64         = qede_get_stats64,
++#else
++        .ndo_get_stats           = qede_get_stats64,
++#endif
+ #ifdef CONFIG_QED_SRIOV
+ 	.ndo_set_vf_link_state = qede_set_vf_link_state,
+ 	.ndo_set_vf_spoofchk = qede_set_vf_spoofchk,
+@@ -1777,6 +1798,7 @@ static int qede_stop_queues(struct qede_dev *edev)
+ 			}
+ 		}
+ 
++#ifdef HAVE_XDP
+ 		/* Stop the XDP forwarding queue */
+ 		if (fp->type & QEDE_FASTPATH_XDP) {
+ 			rc = qede_stop_txq(edev, fp->xdp_tx, i);
+@@ -1785,6 +1807,7 @@ static int qede_stop_queues(struct qede_dev *edev)
+ 
+ 			bpf_prog_put(fp->rxq->xdp_prog);
+ 		}
++#endif
+ 	}
+ 
+ 	/* Stop the vport */
+@@ -1922,7 +1945,7 @@ static int qede_start_queues(struct qede_dev *edev, bool clear_stats)
+ 
+ 			qede_update_rx_prod(edev, rxq);
+ 		}
+-
++#ifdef HAVE_XDP
+ 		if (fp->type & QEDE_FASTPATH_XDP) {
+ 			rc = qede_start_txq(edev, fp, fp->xdp_tx, i, XDP_PI);
+ 			if (rc)
+@@ -1935,6 +1958,7 @@ static int qede_start_queues(struct qede_dev *edev, bool clear_stats)
+ 				goto out;
+ 			}
+ 		}
++#endif
+ 
+ 		if (fp->type & QEDE_FASTPATH_TX) {
+ 			rc = qede_start_txq(edev, fp, fp->txq, i, TX_PI(0));
+-- 
+1.8.3.1
+

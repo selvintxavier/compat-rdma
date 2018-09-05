@@ -1,3 +1,14 @@
+From 758572e3a297d48aac33aa65781deeb4f5f0bc6e Mon Sep 17 00:00:00 2001
+From: Michal Kalderon <michal.kalderon@cavium.com>
+Date: Wed, 5 Sep 2018 10:34:05 +0300
+Subject: [PATCH 2/4] qede: RHEL 7.5 backport
+
+---
+ drivers/net/ethernet/qlogic/qede/qede.h      | 11 +++++++++++
+ drivers/net/ethernet/qlogic/qede/qede_fp.c   |  3 +++
+ drivers/net/ethernet/qlogic/qede/qede_main.c | 25 +++++++++++++++++++++++++
+ 3 files changed, 39 insertions(+)
+
 diff --git a/drivers/net/ethernet/qlogic/qede/qede.h b/drivers/net/ethernet/qlogic/qede/qede.h
 index 9935978..e70c96a 100644
 --- a/drivers/net/ethernet/qlogic/qede/qede.h
@@ -37,7 +48,7 @@ index 9935978..e70c96a 100644
  
  union db_prod {
 diff --git a/drivers/net/ethernet/qlogic/qede/qede_fp.c b/drivers/net/ethernet/qlogic/qede/qede_fp.c
-index 1494130..f612559 100644
+index 1494130..e906d04 100644
 --- a/drivers/net/ethernet/qlogic/qede/qede_fp.c
 +++ b/drivers/net/ethernet/qlogic/qede/qede_fp.c
 @@ -1004,7 +1004,10 @@ static bool qede_rx_xdp(struct qede_dev *edev,
@@ -52,7 +63,7 @@ index 1494130..f612559 100644
  	/* Queues always have a full reset currently, so for the time
  	 * being until there's atomic program replace just mark read
 diff --git a/drivers/net/ethernet/qlogic/qede/qede_main.c b/drivers/net/ethernet/qlogic/qede/qede_main.c
-index f6655e2..fcf3edc 100644
+index f6655e2..7cc9c6e 100644
 --- a/drivers/net/ethernet/qlogic/qede/qede_main.c
 +++ b/drivers/net/ethernet/qlogic/qede/qede_main.c
 @@ -536,7 +536,9 @@ static const struct net_device_ops qede_netdev_ops = {
@@ -122,19 +133,21 @@ index f6655e2..fcf3edc 100644
  };
  
  /* -------------------------------------------------------------------------
-@@ -720,9 +736,10 @@ static void qede_init_ndev(struct qede_dev *edev)
+@@ -720,8 +736,13 @@ static void qede_init_ndev(struct qede_dev *edev)
  	ndev->hw_features = hw_features;
  
  	/* MTU range: 46 - 9600 */
 +#ifdef HAVE_NET_DEVICE_MAX_MTU
  	ndev->min_mtu = ETH_ZLEN - ETH_HLEN;
  	ndev->max_mtu = QEDE_MAX_JUMBO_PACKET_SIZE;
--
++#elif defined(HAVE_NET_DEVICE_MIN_MAX_MTU_EXTENDED)
++        ndev->extended->min_mtu = ETH_ZLEN - ETH_HLEN;
++        ndev->extended->max_mtu = QEDE_MAX_JUMBO_PACKET_SIZE;
 +#endif
+ 
  	/* Set network device HW mac */
  	ether_addr_copy(edev->ndev->dev_addr, edev->dev_info.common.hw_mac);
- 
-@@ -769,8 +786,10 @@ static void qede_free_fp_array(struct qede_dev *edev)
+@@ -769,8 +790,10 @@ static void qede_free_fp_array(struct qede_dev *edev)
  			 * didn't register xdp_rxq_info yet.
  			 * Implicit only (fp->type & QEDE_FASTPATH_RX)
  			 */
@@ -145,7 +158,7 @@ index f6655e2..fcf3edc 100644
  			kfree(fp->rxq);
  			kfree(fp->xdp_tx);
  			kfree(fp->txq);
-@@ -1500,8 +1519,10 @@ static void qede_init_fp(struct qede_dev *edev)
+@@ -1500,8 +1523,10 @@ static void qede_init_fp(struct qede_dev *edev)
  			fp->rxq->dev = &edev->pdev->dev;
  
  			/* Driver have no error path from here */
@@ -156,3 +169,6 @@ index f6655e2..fcf3edc 100644
  		}
  
  		if (fp->type & QEDE_FASTPATH_TX) {
+-- 
+1.8.3.1
+
