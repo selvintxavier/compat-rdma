@@ -1,0 +1,59 @@
+From 0d2f04de955a9ce03251e64f866a5cda5c5733e1 Mon Sep 17 00:00:00 2001
+From: Selvin Xavier <selvin.xavier@broadcom.com>
+Date: Thu, 6 Sep 2018 01:29:42 -0400
+Subject: [PATCH] bnxt_en: BACKPORT-fix linking failure for 4.17 kernels
+
+Updated the makefile to compile bnxt_dim.c always. Include
+condition check in the bnxt_dim.c for handling older kernels
+
+Signed-off-by: Selvin Xavier <selvin.xavier@broadcom.com>
+---
+ drivers/net/ethernet/broadcom/bnxt/Makefile   |  2 --
+ drivers/net/ethernet/broadcom/bnxt/bnxt_dim.c | 12 ++++++++++++
+ 2 files changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/ethernet/broadcom/bnxt/Makefile b/drivers/net/ethernet/broadcom/bnxt/Makefile
+index 6b05eab..eb546fb 100644
+--- a/drivers/net/ethernet/broadcom/bnxt/Makefile
++++ b/drivers/net/ethernet/broadcom/bnxt/Makefile
+@@ -2,6 +2,4 @@ obj-$(CONFIG_BNXT) += bnxt_en.o
+ 
+ bnxt_en-y := bnxt.o bnxt_sriov.o bnxt_ethtool.o bnxt_dcb.o bnxt_ulp.o bnxt_xdp.o bnxt_vfr.o bnxt_devlink.o
+ bnxt_en-$(CONFIG_BNXT_FLOWER_OFFLOAD) += bnxt_tc.o
+-ifdef HAVE_NET_DIM_H
+ bnxt_en-y += bnxt_dim.o
+-endif
+diff --git a/drivers/net/ethernet/broadcom/bnxt/bnxt_dim.c b/drivers/net/ethernet/broadcom/bnxt/bnxt_dim.c
+index 2b0c5c9..9525fdd 100644
+--- a/drivers/net/ethernet/broadcom/bnxt/bnxt_dim.c
++++ b/drivers/net/ethernet/broadcom/bnxt/bnxt_dim.c
+@@ -9,10 +9,21 @@
+ 
+ #include <linux/pci.h>
+ #include <linux/netdevice.h>
++#ifdef HAVE_NET_DIM_H
+ #include <linux/net_dim.h>
++#endif
+ #include "bnxt_hsi.h"
+ #include "bnxt.h"
+ 
++#ifdef HAVE_NET_DIM_H
++
++static inline struct net_dim_cq_moder
++net_dim_get_rx_moderation(u8 cq_period_mode, int ix)
++{
++        return net_dim_get_profile(cq_period_mode, ix);
++}
++
++
+ void bnxt_dim_work(struct work_struct *work)
+ {
+ 	struct net_dim *dim = container_of(work, struct net_dim,
+@@ -32,3 +43,4 @@ void bnxt_dim_work(struct work_struct *work)
+ 	bnxt_hwrm_set_ring_coal(bnapi->bp, bnapi);
+ 	dim->state = NET_DIM_START_MEASURE;
+ }
++#endif
+-- 
+1.8.3.1
+
