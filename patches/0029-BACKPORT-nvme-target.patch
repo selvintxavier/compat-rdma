@@ -1,0 +1,671 @@
+From: Vladimir Sokolovsky <vlad@mellanox.com>
+Subject: [PATCH] BACKPORT: nvme target
+
+Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
+---
+ drivers/nvme/target/admin-cmd.c   |   3 ++
+ drivers/nvme/target/discovery.c   |   3 ++
+ drivers/nvme/target/fabrics-cmd.c |   3 ++
+ drivers/nvme/target/fc.c          |  54 +++++++++++++++++++
+ drivers/nvme/target/io-cmd.c      | 106 ++++++++++++++++++++++++++++++++++++++
+ drivers/nvme/target/loop.c        |  54 +++++++++++++++++++
+ drivers/nvme/target/rdma.c        |  78 ++++++++++++++++++++++++++++
+ 7 files changed, 301 insertions(+)
+
+diff --git a/drivers/nvme/target/admin-cmd.c b/drivers/nvme/target/admin-cmd.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/nvme/target/admin-cmd.c
++++ b/drivers/nvme/target/admin-cmd.c
+@@ -11,6 +11,9 @@
+  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+  * more details.
+  */
++#ifdef pr_fmt
++#undef pr_fmt
++#endif
+ #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+ #include <linux/module.h>
+ #include <linux/rculist.h>
+diff --git a/drivers/nvme/target/discovery.c b/drivers/nvme/target/discovery.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/nvme/target/discovery.c
++++ b/drivers/nvme/target/discovery.c
+@@ -11,6 +11,9 @@
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  */
++#ifdef pr_fmt
++#undef pr_fmt
++#endif
+ #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+ #include <linux/slab.h>
+ #include <generated/utsrelease.h>
+diff --git a/drivers/nvme/target/fabrics-cmd.c b/drivers/nvme/target/fabrics-cmd.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/nvme/target/fabrics-cmd.c
++++ b/drivers/nvme/target/fabrics-cmd.c
+@@ -11,6 +11,9 @@
+  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+  * more details.
+  */
++#ifdef pr_fmt
++#undef pr_fmt
++#endif
+ #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+ #include <linux/blkdev.h>
+ #include "nvmet.h"
+diff --git a/drivers/nvme/target/fc.c b/drivers/nvme/target/fc.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/nvme/target/fc.c
++++ b/drivers/nvme/target/fc.c
+@@ -14,6 +14,11 @@
+  * can be found in the file COPYING included with this package
+  *
+  */
++#ifdef HAVE_LINUX_NVME_FC_DRIVER_H
++
++#ifdef pr_fmt
++#undef pr_fmt
++#endif
+ #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+ #include <linux/module.h>
+ #include <linux/slab.h>
+@@ -1712,10 +1717,36 @@ nvmet_fc_alloc_tgt_pgs(struct nvmet_fc_fcp_iod *fod)
+ 	struct scatterlist *sg;
+ 	unsigned int nent;
+ 
++#ifndef HAVE_SGL_ALLOC
++	struct page *page;
++	u32 page_len, length;
++	int i = 0;
++
++	length = fod->req.transfer_len;
++	nent = DIV_ROUND_UP(length, PAGE_SIZE);
++	sg = kmalloc_array(nent, sizeof(struct scatterlist), GFP_KERNEL);
++#else
+ 	sg = sgl_alloc(fod->req.transfer_len, GFP_KERNEL, &nent);
++#endif
+ 	if (!sg)
+ 		goto out;
+ 
++#ifndef HAVE_SGL_ALLOC
++	sg_init_table(sg, nent);
++
++	while (length) {
++		page_len = min_t(u32, length, PAGE_SIZE);
++
++		page = alloc_page(GFP_KERNEL);
++		if (!page)
++			goto out_free_pages;
++
++		sg_set_page(&sg[i], page, page_len, 0);
++		length -= page_len;
++		i++;
++	}
++
++#endif
+ 	fod->data_sg = sg;
+ 	fod->data_sg_cnt = nent;
+ 	fod->data_sg_cnt = fc_dma_map_sg(fod->tgtport->dev, sg, nent,
+@@ -1725,6 +1756,17 @@ nvmet_fc_alloc_tgt_pgs(struct nvmet_fc_fcp_iod *fod)
+ 
+ 	return 0;
+ 
++#ifndef HAVE_SGL_ALLOC
++out_free_pages:
++	while (i > 0) {
++		i--;
++		__free_page(sg_page(&sg[i]));
++	}
++
++	kfree(sg);
++	fod->data_sg = NULL;
++	fod->data_sg_cnt = 0;
++#endif
+ out:
+ 	return NVME_SC_INTERNAL;
+ }
+@@ -1732,13 +1774,24 @@ out:
+ static void
+ nvmet_fc_free_tgt_pgs(struct nvmet_fc_fcp_iod *fod)
+ {
++#ifndef HAVE_SGL_FREE
++	struct scatterlist *sg;
++	int count;
++
++#endif
+ 	if (!fod->data_sg || !fod->data_sg_cnt)
+ 		return;
+ 
+ 	fc_dma_unmap_sg(fod->tgtport->dev, fod->data_sg, fod->data_sg_cnt,
+ 				((fod->io_dir == NVMET_FCP_WRITE) ?
+ 					DMA_FROM_DEVICE : DMA_TO_DEVICE));
++#ifdef HAVE_SGL_FREE
+ 	sgl_free(fod->data_sg);
++#else
++	for_each_sg(fod->data_sg, sg, fod->data_sg_cnt, count)
++	__free_page(sg_page(sg));
++	kfree(fod->data_sg);
++#endif
+ 	fod->data_sg = NULL;
+ 	fod->data_sg_cnt = 0;
+ }
+@@ -2548,3 +2601,4 @@ module_init(nvmet_fc_init_module);
+ module_exit(nvmet_fc_exit_module);
+ 
+ MODULE_LICENSE("GPL v2");
++#endif /* HAVE_LINUX_NVME_FC_DRIVER_H */
+diff --git a/drivers/nvme/target/io-cmd.c b/drivers/nvme/target/io-cmd.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/nvme/target/io-cmd.c
++++ b/drivers/nvme/target/io-cmd.c
+@@ -11,17 +11,31 @@
+  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+  * more details.
+  */
++#ifdef pr_fmt
++#undef pr_fmt
++#endif
++
+ #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+ #include <linux/blkdev.h>
+ #include <linux/module.h>
+ #include "nvmet.h"
+ 
++#ifdef HAVE_BIO_ENDIO_1_PARAM
+ static void nvmet_bio_done(struct bio *bio)
++#else
++static void nvmet_bio_done(struct bio *bio, int error)
++#endif
+ {
+ 	struct nvmet_req *req = bio->bi_private;
+ 
+ 	nvmet_req_complete(req,
++#ifdef HAVE_BLK_STATUS_T
+ 		bio->bi_status ? NVME_SC_INTERNAL | NVME_SC_DNR : 0);
++#elif defined(HAVE_STRUCT_BIO_BI_ERROR)
++		bio->bi_error ? NVME_SC_INTERNAL | NVME_SC_DNR : 0);
++#else
++		error ? NVME_SC_INTERNAL | NVME_SC_DNR : 0);
++#endif
+ 
+ 	if (bio != &req->inline_bio)
+ 		bio_put(bio);
+@@ -39,7 +53,9 @@ static void nvmet_execute_rw(struct nvmet_req *req)
+ 	struct bio *bio = &req->inline_bio;
+ 	struct scatterlist *sg;
+ 	sector_t sector;
++#ifdef HAVE_SUBMIT_BIO_1_PARAM
+ 	blk_qc_t cookie;
++#endif
+ 	int op, op_flags = 0, i;
+ 
+ 	if (!req->sg_cnt) {
+@@ -49,7 +65,11 @@ static void nvmet_execute_rw(struct nvmet_req *req)
+ 
+ 	if (req->cmd->rw.opcode == nvme_cmd_write) {
+ 		op = REQ_OP_WRITE;
++#ifdef HAVE_REQ_IDLE
+ 		op_flags = REQ_SYNC | REQ_IDLE;
++#else
++		op_flags = WRITE_ODIRECT;
++#endif
+ 		if (req->cmd->rw.control & cpu_to_le16(NVME_RW_FUA))
+ 			op_flags |= REQ_FUA;
+ 	} else {
+@@ -59,9 +79,23 @@ static void nvmet_execute_rw(struct nvmet_req *req)
+ 	sector = le64_to_cpu(req->cmd->rw.slba);
+ 	sector <<= (req->ns->blksize_shift - 9);
+ 
++#ifdef HAVE_BIO_INIT_3_PARAMS
+ 	bio_init(bio, req->inline_bvec, ARRAY_SIZE(req->inline_bvec));
++#else
++	bio_init(bio);
++	bio->bi_io_vec = req->inline_bvec;
++	bio->bi_max_vecs = ARRAY_SIZE(req->inline_bvec);
++#endif
++#ifdef HAVE_BIO_BI_DISK
+ 	bio_set_dev(bio, req->ns->bdev);
++#else
++	bio->bi_bdev = req->ns->bdev;
++#endif
++#ifdef HAVE_STRUCT_BIO_BI_ITER
+ 	bio->bi_iter.bi_sector = sector;
++#else
++	bio->bi_sector = sector;
++#endif
+ 	bio->bi_private = req;
+ 	bio->bi_end_io = nvmet_bio_done;
+ 	bio_set_op_attrs(bio, op, op_flags);
+@@ -72,34 +106,73 @@ static void nvmet_execute_rw(struct nvmet_req *req)
+ 			struct bio *prev = bio;
+ 
+ 			bio = bio_alloc(GFP_KERNEL, min(sg_cnt, BIO_MAX_PAGES));
++#ifdef HAVE_BIO_BI_DISK
+ 			bio_set_dev(bio, req->ns->bdev);
++#else
++			bio->bi_bdev = req->ns->bdev;
++#endif
++#ifdef HAVE_STRUCT_BIO_BI_ITER
+ 			bio->bi_iter.bi_sector = sector;
++#else
++			bio->bi_sector = sector;
++#endif
+ 			bio_set_op_attrs(bio, op, op_flags);
+ 
+ 			bio_chain(bio, prev);
++#ifdef HAVE_SUBMIT_BIO_1_PARAM
+ 			submit_bio(prev);
++#else
++			submit_bio(bio_data_dir(prev), prev);
++#endif
+ 		}
+ 
+ 		sector += sg->length >> 9;
+ 		sg_cnt--;
+ 	}
+ 
++#ifdef HAVE_SUBMIT_BIO_1_PARAM
+ 	cookie = submit_bio(bio);
+ 
++#ifdef HAVE_BLK_MQ_POLL
++	blk_mq_poll(bdev_get_queue(req->ns->bdev), cookie);
++#elif defined(HAVE_BLK_POLL)
+ 	blk_poll(bdev_get_queue(req->ns->bdev), cookie);
++#endif /* HAVE_BLK_MQ_POLL */
++
++#else
++	submit_bio(bio_data_dir(bio), bio);
++#endif /* HAVE_SUBMIT_BIO_1_PARAM */
+ }
+ 
+ static void nvmet_execute_flush(struct nvmet_req *req)
+ {
+ 	struct bio *bio = &req->inline_bio;
+ 
++#ifdef HAVE_BIO_INIT_3_PARAMS
+ 	bio_init(bio, req->inline_bvec, ARRAY_SIZE(req->inline_bvec));
++#else
++	bio_init(bio);
++	bio->bi_io_vec = req->inline_bvec;
++	bio->bi_max_vecs = ARRAY_SIZE(req->inline_bvec);
++#endif
++#ifdef HAVE_BIO_BI_DISK
+ 	bio_set_dev(bio, req->ns->bdev);
++#else
++	bio->bi_bdev = req->ns->bdev;
++#endif
+ 	bio->bi_private = req;
+ 	bio->bi_end_io = nvmet_bio_done;
++#ifdef HAVE_STRUCT_BIO_BI_OPF
+ 	bio->bi_opf = REQ_OP_WRITE | REQ_PREFLUSH;
++#else
++	bio_set_op_attrs(bio, REQ_OP_WRITE, WRITE_FLUSH);
++#endif
+ 
++#ifdef HAVE_SUBMIT_BIO_1_PARAM
+ 	submit_bio(bio);
++#else
++	submit_bio(bio_data_dir(bio), bio);
++#endif
+ }
+ 
+ static u16 nvmet_discard_range(struct nvmet_ns *ns,
+@@ -107,10 +180,17 @@ static u16 nvmet_discard_range(struct nvmet_ns *ns,
+ {
+ 	int ret;
+ 
++#ifdef HAVE___BLKDEV_ISSUE_DISCARD
+ 	ret = __blkdev_issue_discard(ns->bdev,
+ 			le64_to_cpu(range->slba) << (ns->blksize_shift - 9),
+ 			le32_to_cpu(range->nlb) << (ns->blksize_shift - 9),
+ 			GFP_KERNEL, 0, bio);
++#else
++	ret = blkdev_issue_discard(ns->bdev,
++			le64_to_cpu(range->slba) << (ns->blksize_shift - 9),
++			le32_to_cpu(range->nlb) << (ns->blksize_shift - 9),
++			GFP_KERNEL, 0);
++#endif
+ 	if (ret && ret != -EOPNOTSUPP)
+ 		return NVME_SC_INTERNAL | NVME_SC_DNR;
+ 	return 0;
+@@ -138,10 +218,22 @@ static void nvmet_execute_discard(struct nvmet_req *req)
+ 		bio->bi_private = req;
+ 		bio->bi_end_io = nvmet_bio_done;
+ 		if (status) {
++#ifdef HAVE_BLK_STATUS_T
+ 			bio->bi_status = BLK_STS_IOERR;
++#elif defined(HAVE_STRUCT_BIO_BI_ERROR)
++			bio->bi_error = -EIO;
++#endif
++#ifdef HAVE_BIO_ENDIO_1_PARAM
+ 			bio_endio(bio);
++#else
++			bio_endio(bio, -EIO);
++#endif
+ 		} else {
++#ifdef HAVE_SUBMIT_BIO_1_PARAM
+ 			submit_bio(bio);
++#else
++			submit_bio(bio_data_dir(bio), bio);
++#endif
+ 		}
+ 	} else {
+ 		nvmet_req_complete(req, status);
+@@ -163,6 +255,7 @@ static void nvmet_execute_dsm(struct nvmet_req *req)
+ 	}
+ }
+ 
++#ifdef HAVE_BLKDEV_ISSUE_ZEROOUT
+ static void nvmet_execute_write_zeroes(struct nvmet_req *req)
+ {
+ 	struct nvme_write_zeroes_cmd *write_zeroes = &req->cmd->write_zeroes;
+@@ -176,18 +269,29 @@ static void nvmet_execute_write_zeroes(struct nvmet_req *req)
+ 	nr_sector = (((sector_t)le16_to_cpu(write_zeroes->length) + 1) <<
+ 		(req->ns->blksize_shift - 9));
+ 
++#ifdef CONFIG_COMPAT_IS_BLKDEV_ISSUE_ZEROOUT_HAS_FLAGS
+ 	if (__blkdev_issue_zeroout(req->ns->bdev, sector, nr_sector,
+ 				GFP_KERNEL, &bio, 0))
++#else
++	if (__blkdev_issue_zeroout(req->ns->bdev, sector, nr_sector,
++				GFP_KERNEL, &bio, true))
++
++#endif
+ 		status = NVME_SC_INTERNAL | NVME_SC_DNR;
+ 
+ 	if (bio) {
+ 		bio->bi_private = req;
+ 		bio->bi_end_io = nvmet_bio_done;
++#ifdef HAVE_SUBMIT_BIO_1_PARAM
+ 		submit_bio(bio);
++#else
++		submit_bio(bio_data_dir(bio), bio);
++#endif
+ 	} else {
+ 		nvmet_req_complete(req, status);
+ 	}
+ }
++#endif
+ 
+ u16 nvmet_parse_io_cmd(struct nvmet_req *req)
+ {
+@@ -219,9 +323,11 @@ u16 nvmet_parse_io_cmd(struct nvmet_req *req)
+ 		req->data_len = (le32_to_cpu(cmd->dsm.nr) + 1) *
+ 			sizeof(struct nvme_dsm_range);
+ 		return 0;
++#ifdef HAVE_BLKDEV_ISSUE_ZEROOUT
+ 	case nvme_cmd_write_zeroes:
+ 		req->execute = nvmet_execute_write_zeroes;
+ 		return 0;
++#endif
+ 	default:
+ 		pr_err("unhandled cmd %d on qid %d\n", cmd->common.opcode,
+ 		       req->sq->qid);
+diff --git a/drivers/nvme/target/loop.c b/drivers/nvme/target/loop.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/nvme/target/loop.c
++++ b/drivers/nvme/target/loop.c
+@@ -11,6 +11,9 @@
+  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+  * more details.
+  */
++#ifdef pr_fmt
++#undef pr_fmt
++#endif
+ #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+ #include <linux/scatterlist.h>
+ #include <linux/blk-mq.h>
+@@ -174,16 +177,31 @@ static blk_status_t nvme_loop_queue_rq(struct blk_mq_hw_ctx *hctx,
+ 			&queue->nvme_sq, &nvme_loop_ops))
+ 		return BLK_STS_OK;
+ 
++#ifdef HAVE_BLK_RQ_NR_PAYLOAD_BYTES
+ 	if (blk_rq_payload_bytes(req)) {
++#else
++	if (nvme_map_len(req)) {
++#endif
+ 		iod->sg_table.sgl = iod->first_sgl;
++#ifdef HAVE_SG_ALLOC_TABLE_CHAINED_4_PARAMS
+ 		if (sg_alloc_table_chained(&iod->sg_table,
+ 				blk_rq_nr_phys_segments(req),
++				GFP_ATOMIC,
+ 				iod->sg_table.sgl))
++#else
++		if (sg_alloc_table_chained(&iod->sg_table,
++				blk_rq_nr_phys_segments(req),
++				iod->sg_table.sgl))
++#endif
+ 			return BLK_STS_RESOURCE;
+ 
+ 		iod->req.sg = iod->sg_table.sgl;
+ 		iod->req.sg_cnt = blk_rq_map_sg(req->q, req, iod->sg_table.sgl);
++#ifdef HAVE_BLK_RQ_NR_PAYLOAD_BYTES
+ 		iod->req.transfer_len = blk_rq_payload_bytes(req);
++#else
++		iod->req.transfer_len = nvme_map_len(req);
++#endif
+ 	}
+ 
+ 	schedule_work(&iod->work);
+@@ -220,6 +238,7 @@ static int nvme_loop_init_iod(struct nvme_loop_ctrl *ctrl,
+ 	return 0;
+ }
+ 
++#ifdef HAVE_BLK_MQ_OPS_INIT_REQUEST_HAS_4_PARAMS
+ static int nvme_loop_init_request(struct blk_mq_tag_set *set,
+ 		struct request *req, unsigned int hctx_idx,
+ 		unsigned int numa_node)
+@@ -229,6 +248,21 @@ static int nvme_loop_init_request(struct blk_mq_tag_set *set,
+ 	return nvme_loop_init_iod(ctrl, blk_mq_rq_to_pdu(req),
+ 			(set == &ctrl->tag_set) ? hctx_idx + 1 : 0);
+ }
++#else
++static int nvme_loop_init_request(void *data, struct request *req,
++		unsigned int hctx_idx, unsigned int rq_idx,
++		unsigned int numa_node)
++{
++	return nvme_loop_init_iod(data, blk_mq_rq_to_pdu(req), hctx_idx + 1);
++}
++
++static int nvme_loop_init_admin_request(void *data, struct request *req,
++		unsigned int hctx_idx, unsigned int rq_idx,
++		unsigned int numa_node)
++{
++	return nvme_loop_init_iod(data, blk_mq_rq_to_pdu(req), 0);
++}
++#endif
+ 
+ static int nvme_loop_init_hctx(struct blk_mq_hw_ctx *hctx, void *data,
+ 		unsigned int hctx_idx)
+@@ -254,7 +288,11 @@ static int nvme_loop_init_admin_hctx(struct blk_mq_hw_ctx *hctx, void *data,
+ 	return 0;
+ }
+ 
++#ifdef HAVE_BLK_MQ_TAG_SET_HAS_CONST_POS
+ static const struct blk_mq_ops nvme_loop_mq_ops = {
++#else
++static struct blk_mq_ops nvme_loop_mq_ops = {
++#endif
+ 	.queue_rq	= nvme_loop_queue_rq,
+ 	.complete	= nvme_loop_complete_rq,
+ 	.init_request	= nvme_loop_init_request,
+@@ -262,10 +300,18 @@ static const struct blk_mq_ops nvme_loop_mq_ops = {
+ 	.timeout	= nvme_loop_timeout,
+ };
+ 
++#ifdef HAVE_BLK_MQ_TAG_SET_HAS_CONST_POS
+ static const struct blk_mq_ops nvme_loop_admin_mq_ops = {
++#else
++static struct blk_mq_ops nvme_loop_admin_mq_ops = {
++#endif
+ 	.queue_rq	= nvme_loop_queue_rq,
+ 	.complete	= nvme_loop_complete_rq,
++#ifdef HAVE_BLK_MQ_OPS_INIT_REQUEST_HAS_4_PARAMS
+ 	.init_request	= nvme_loop_init_request,
++#else
++	.init_request	= nvme_loop_init_admin_request,
++#endif
+ 	.init_hctx	= nvme_loop_init_admin_hctx,
+ 	.timeout	= nvme_loop_timeout,
+ };
+@@ -366,7 +412,9 @@ static int nvme_loop_configure_admin_queue(struct nvme_loop_ctrl *ctrl)
+ 	ctrl->admin_tag_set.driver_data = ctrl;
+ 	ctrl->admin_tag_set.nr_hw_queues = 1;
+ 	ctrl->admin_tag_set.timeout = ADMIN_TIMEOUT;
++#ifdef HAVE_BLK_MQ_F_NO_SCHED
+ 	ctrl->admin_tag_set.flags = BLK_MQ_F_NO_SCHED;
++#endif
+ 
+ 	ctrl->queues[0].ctrl = ctrl;
+ 	error = nvmet_sq_init(&ctrl->queues[0].nvme_sq);
+@@ -435,10 +483,16 @@ static void nvme_loop_shutdown_ctrl(struct nvme_loop_ctrl *ctrl)
+ 	if (ctrl->ctrl.state == NVME_CTRL_LIVE)
+ 		nvme_shutdown_ctrl(&ctrl->ctrl);
+ 
++#ifdef HAVE_BLK_MQ_UNQUIESCE_QUEUE
+ 	blk_mq_quiesce_queue(ctrl->ctrl.admin_q);
++#else
++	blk_mq_stop_hw_queues(ctrl->ctrl.admin_q);
++#endif
+ 	blk_mq_tagset_busy_iter(&ctrl->admin_tag_set,
+ 				nvme_cancel_request, &ctrl->ctrl);
++#ifdef HAVE_BLK_MQ_UNQUIESCE_QUEUE
+ 	blk_mq_unquiesce_queue(ctrl->ctrl.admin_q);
++#endif
+ 	nvme_loop_destroy_admin_queue(ctrl);
+ }
+ 
+diff --git a/drivers/nvme/target/rdma.c b/drivers/nvme/target/rdma.c
+index xxxxxxx..xxxxxxx xxxxxx
+--- a/drivers/nvme/target/rdma.c
++++ b/drivers/nvme/target/rdma.c
+@@ -11,6 +11,9 @@
+  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+  * more details.
+  */
++#ifdef pr_fmt
++#undef pr_fmt
++#endif
+ #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+ #include <linux/atomic.h>
+ #include <linux/ctype.h>
+@@ -184,6 +187,63 @@ nvmet_rdma_put_rsp(struct nvmet_rdma_rsp *rsp)
+ 	spin_unlock_irqrestore(&rsp->queue->rsps_lock, flags);
+ }
+ 
++#ifndef HAVE_SGL_FREE
++static void nvmet_rdma_free_sgl(struct scatterlist *sgl, unsigned int nents)
++{
++	struct scatterlist *sg;
++	int count;
++
++	if (!sgl || !nents)
++		return;
++
++	for_each_sg(sgl, sg, nents, count)
++		__free_page(sg_page(sg));
++	kfree(sgl);
++}
++#endif
++
++#ifndef HAVE_SGL_ALLOC
++static int nvmet_rdma_alloc_sgl(struct scatterlist **sgl, unsigned int *nents,
++               u32 length)
++{
++	struct scatterlist *sg;
++	struct page *page;
++	unsigned int nent;
++	int i = 0;
++
++	nent = DIV_ROUND_UP(length, PAGE_SIZE);
++	sg = kmalloc_array(nent, sizeof(struct scatterlist), GFP_KERNEL);
++	if (!sg)
++		goto out;
++
++	sg_init_table(sg, nent);
++
++	while (length) {
++		u32 page_len = min_t(u32, length, PAGE_SIZE);
++
++	        page = alloc_page(GFP_KERNEL);
++		if (!page)
++	                goto out_free_pages;
++
++	        sg_set_page(&sg[i], page, page_len, 0);
++		length -= page_len;
++		i++;
++	}
++	*sgl = sg;
++	*nents = nent;
++	return 0;
++
++out_free_pages:
++	while (i > 0) {
++		i--;
++		__free_page(sg_page(&sg[i]));
++	}
++	kfree(sg);
++out:
++	return NVME_SC_INTERNAL;
++}
++#endif
++
+ static int nvmet_rdma_alloc_cmd(struct nvmet_rdma_device *ndev,
+ 			struct nvmet_rdma_cmd *c, bool admin)
+ {
+@@ -430,7 +490,11 @@ static void nvmet_rdma_release_rsp(struct nvmet_rdma_rsp *rsp)
+ 	}
+ 
+ 	if (rsp->req.sg != &rsp->cmd->inline_sg)
++#ifdef HAVE_SGL_FREE
+ 		sgl_free(rsp->req.sg);
++#else
++		nvmet_rdma_free_sgl(rsp->req.sg, rsp->req.sg_cnt);
++#endif
+ 
+ 	if (unlikely(!list_empty_careful(&queue->rsp_wr_wait_list)))
+ 		nvmet_rdma_process_wr_wait_list(queue);
+@@ -567,14 +631,24 @@ static u16 nvmet_rdma_map_sgl_keyed(struct nvmet_rdma_rsp *rsp,
+ 	u32 len = get_unaligned_le24(sgl->length);
+ 	u32 key = get_unaligned_le32(sgl->key);
+ 	int ret;
++#ifndef HAVE_SGL_ALLOC
++	u16 status;
++#endif
+ 
+ 	/* no data command? */
+ 	if (!len)
+ 		return 0;
+ 
++#ifdef HAVE_SGL_ALLOC
+ 	rsp->req.sg = sgl_alloc(len, GFP_KERNEL, &rsp->req.sg_cnt);
+ 	if (!rsp->req.sg)
+ 		return NVME_SC_INTERNAL;
++#else
++	status = nvmet_rdma_alloc_sgl(&rsp->req.sg, &rsp->req.sg_cnt,
++			len);
++	if (status)
++		return status;
++#endif
+ 
+ 	ret = rdma_rw_ctx_init(&rsp->rw, cm_id->qp, cm_id->port_num,
+ 			rsp->req.sg, rsp->req.sg_cnt, 0, addr, key,
+@@ -1439,6 +1513,7 @@ static void nvmet_rdma_remove_port(struct nvmet_port *port)
+ static void nvmet_rdma_disc_port_addr(struct nvmet_req *req,
+ 		struct nvmet_port *port, char *traddr)
+ {
++#ifdef HAVE_INET_ADDR_IS_ANY
+ 	struct rdma_cm_id *cm_id = port->priv;
+ 
+ 	if (inet_addr_is_any((struct sockaddr *)&cm_id->route.addr.src_addr)) {
+@@ -1451,6 +1526,9 @@ static void nvmet_rdma_disc_port_addr(struct nvmet_req *req,
+ 	} else {
+ 		memcpy(traddr, port->disc_addr.traddr, NVMF_TRADDR_SIZE);
+ 	}
++#else
++	memcpy(traddr, port->disc_addr.traddr, NVMF_TRADDR_SIZE);
++#endif
+ }
+ 
+ static const struct nvmet_fabrics_ops nvmet_rdma_ops = {
