@@ -609,9 +609,6 @@ main()
 				CONFIG_INFINIBAND_ISER="m"
 				add_conf "# Load ISER module" "ISER_LOAD=no"
 				;;
-			--without-isert-mod)
-				CONFIG_INFINIBAND_ISERT=
-				;;
 			--with-iscsi-mod)
 				CONFIG_SCSI_ISCSI_ATTRS="m"
 				CONFIG_ISCSI_TCP="m"
@@ -620,6 +617,9 @@ main()
 				CONFIG_INFINIBAND_ISER=
 				CONFIG_SCSI_ISCSI_ATTRS=
 				CONFIG_ISCSI_TCP=
+				;;
+			--with-isert-mod)
+				CONFIG_INFINIBAND_ISERT="m"
 				;;
 			--without-isert-mod)
 				CONFIG_INFINIBAND_ISERT=
