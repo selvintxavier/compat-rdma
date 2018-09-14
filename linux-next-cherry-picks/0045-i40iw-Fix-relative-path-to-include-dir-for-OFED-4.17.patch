@@ -1,0 +1,24 @@
+From 2c89f7621e1dedabcc8a78852d611e43c56c5d0b Mon Sep 17 00:00:00 2001
+From: Tatyana Nikolova <tatyana.e.nikolova@intel.com>
+Date: Fri, 14 Sep 2018 04:49:50 -0500
+Subject: [PATCH] i40iw: Fix relative path to include dir for OFED-4.17
+
+Signed-off-by: Tatyana Nikolova <tatyana.e.nikolova@intel.com>
+---
+ drivers/infiniband/hw/i40iw/Makefile | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/infiniband/hw/i40iw/Makefile b/drivers/infiniband/hw/i40iw/Makefile
+index 5a8a7a3..a92c220 100644
+--- a/drivers/infiniband/hw/i40iw/Makefile
++++ b/drivers/infiniband/hw/i40iw/Makefile
+@@ -1,5 +1,5 @@
+ # SPDX-License-Identifier: GPL-2.0
+-ccflags-y :=  -Idrivers/net/ethernet/intel/i40e
++ccflags-y :=  -I$(CWD)/drivers/net/ethernet/intel/i40e
+ 
+ obj-$(CONFIG_INFINIBAND_I40IW) += i40iw.o
+ 
+-- 
+1.8.3.1
+
