@@ -904,9 +904,6 @@ main()
 	ARCH=${ARCH:-$(uname -m)}
 
 	case $KVERSION in
-		4\.17*)
-		CONFIG_COMPAT_RDMA=
-		;;
 		*)
 		CONFIG_COMPAT_RDMA=m
 		;;
