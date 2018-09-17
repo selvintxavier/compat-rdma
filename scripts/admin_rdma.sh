@@ -234,7 +234,6 @@ cp $GIT_COMPAT_TREE/autogen.sh $COMPAT/
 cp $GIT_COMPAT_TREE/configure.ac $COMPAT/
 cp -a $GIT_COMPAT_TREE/build $COMPAT/
 cp -a $GIT_COMPAT_TREE/config $COMPAT/
-cp -a $GIT_COMPAT_TREE/udev/ .
 cp -a $GIT_COMPAT_TREE/scripts/ $COMPAT/
 cp -a $GIT_COMPAT_TREE/include/linux/* include/linux/
 cp -a $GIT_COMPAT_TREE/include/net/* include/net/
