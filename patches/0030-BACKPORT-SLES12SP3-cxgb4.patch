@@ -1,0 +1,137 @@
+From 659a872ae31a8fcce77a4bec6685a0f287e502db Mon Sep 17 00:00:00 2001
+From: Arjun Vynipadath <arjun@chelsio.com>
+Date: Tue, 18 Sep 2018 10:32:36 +0530
+Subject: [PATCH] cxgb4: Compilation fixes for SLES12SP3
+
+- Check for ndo_udp_tunnel_{add/del}
+- Disable tc_flower_offload and tc_u32 in SLES12SP3 also.
+  Updated flag for this by checking if tc_cls_common_offload struct
+  exists. This struct was added in 4.14 kernels, and anything below
+  that require too much ifdef's and are not guarenteed to work
+- Check if ETHTOOL_LINK_MODE_10000baseSR_Full_BIT exists
+---
+ drivers/net/ethernet/chelsio/cxgb4/cxgb4_ethtool.c   |  4 ++++
+ drivers/net/ethernet/chelsio/cxgb4/cxgb4_main.c      | 17 ++++++++++-------
+ drivers/net/ethernet/chelsio/cxgb4/cxgb4_tc_flower.c |  2 +-
+ drivers/net/ethernet/chelsio/cxgb4/cxgb4_tc_u32.c    |  2 +-
+ 4 files changed, 16 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/net/ethernet/chelsio/cxgb4/cxgb4_ethtool.c b/drivers/net/ethernet/chelsio/cxgb4/cxgb4_ethtool.c
+index 8828a56..a404a7e 100644
+--- a/drivers/net/ethernet/chelsio/cxgb4/cxgb4_ethtool.c
++++ b/drivers/net/ethernet/chelsio/cxgb4/cxgb4_ethtool.c
+@@ -668,7 +668,11 @@ static void fw_caps_to_lmm(enum fw_port_type port_type,
+ 	case FW_PORT_TYPE_CR4_QSFP:
+ 		SET_LMM(FIBRE);
+ 		FW_CAPS_TO_LMM(SPEED_1G,  1000baseT_Full);
++#ifdef HAVE_ETHTOOL_LINK_MODE_10000baseSR_Full_BIT
+ 		FW_CAPS_TO_LMM(SPEED_10G, 10000baseSR_Full);
++#else
++		FW_CAPS_TO_LMM(SPEED_10G, 10000baseKR_Full);
++#endif
+ 		FW_CAPS_TO_LMM(SPEED_40G, 40000baseSR4_Full);
+ 		FW_CAPS_TO_LMM(SPEED_25G, 25000baseCR_Full);
+ 		FW_CAPS_TO_LMM(SPEED_50G, 50000baseCR2_Full);
+diff --git a/drivers/net/ethernet/chelsio/cxgb4/cxgb4_main.c b/drivers/net/ethernet/chelsio/cxgb4/cxgb4_main.c
+index 3722f68..a70dbf7 100644
+--- a/drivers/net/ethernet/chelsio/cxgb4/cxgb4_main.c
++++ b/drivers/net/ethernet/chelsio/cxgb4/cxgb4_main.c
+@@ -2969,7 +2969,7 @@ static int cxgb_set_tx_maxrate(struct net_device *dev, int index, u32 rate)
+ 	return err;
+ }
+ 
+-#ifndef RHEL_RELEASE_7_4
++#ifdef HAVE_TC_CLS_COMMON_OFFLOAD
+ static int cxgb_setup_tc_flower(struct net_device *dev,
+ 				struct tc_cls_flower_offload *cls_flower)
+ {
+@@ -3084,8 +3084,9 @@ static int cxgb_setup_tc(struct net_device *dev, enum tc_setup_type type,
+ 	}
+ }
+ #endif
+-#endif /* RHEL_RELEASE_7_4 */
++#endif /* HAVE_TC_CLS_COMMON_OFFLOAD */
+ 
++#if defined(HAVE_NDO_UDP_TUNNEL_ADD_EXTENDED) || defined(HAVE_NDO_UDP_TUNNEL_ADD)
+ static void cxgb_del_udp_tunnel(struct net_device *netdev,
+ 				struct udp_tunnel_info *ti)
+ {
+@@ -3253,6 +3254,7 @@ static netdev_features_t cxgb_features_check(struct sk_buff *skb,
+ 	/* Offload is not supported for this encapsulated packet */
+ 	return features & ~(NETIF_F_CSUM_MASK | NETIF_F_GSO_MASK);
+ }
++#endif
+ 
+ static netdev_features_t cxgb_fix_features(struct net_device *dev,
+ 					   netdev_features_t features)
+@@ -3292,7 +3294,7 @@ static const struct net_device_ops cxgb4_netdev_ops = {
+ #else
+ 	.ndo_set_tx_maxrate = cxgb_set_tx_maxrate,
+ #endif
+-#ifndef RHEL_RELEASE_7_4
++#ifdef HAVE_TC_CLS_COMMON_OFFLOAD
+ #ifdef HAVE_NDO_SETUP_TC_RH_EXTENDED
+ 	.extended.ndo_setup_tc_rh	= cxgb_setup_tc,
+ #else
+@@ -3302,11 +3304,12 @@ static const struct net_device_ops cxgb4_netdev_ops = {
+ #ifdef HAVE_NDO_UDP_TUNNEL_ADD_EXTENDED
+ 	.extended.ndo_udp_tunnel_add   = cxgb_add_udp_tunnel,
+ 	.extended.ndo_udp_tunnel_del   = cxgb_del_udp_tunnel,
+-#else
++	.ndo_features_check   = cxgb_features_check,
++#elif defined(HAVE_NDO_UDP_TUNNEL_ADD)
+ 	.ndo_udp_tunnel_add   = cxgb_add_udp_tunnel,
+ 	.ndo_udp_tunnel_del   = cxgb_del_udp_tunnel,
+-#endif
+ 	.ndo_features_check   = cxgb_features_check,
++#endif
+ 	.ndo_fix_features     = cxgb_fix_features,
+ };
+ 
+@@ -5299,7 +5302,7 @@ static void free_some_resources(struct adapter *adapter)
+ 	kvfree(adapter->srq);
+ 	t4_cleanup_sched(adapter);
+ 	kvfree(adapter->tids.tid_tab);
+-#ifndef RHEL_RELEASE_7_4
++#ifdef HAVE_TC_CLS_COMMON_OFFLOAD
+ 	cxgb4_cleanup_tc_flower(adapter);
+ 	cxgb4_cleanup_tc_u32(adapter);
+ #endif
+@@ -5849,7 +5852,7 @@ static int init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
+ 			 "continuing\n");
+ 		adapter->params.offload = 0;
+ 	}
+-#ifndef RHEL_RELEASE_7_4
++#ifdef HAVE_TC_CLS_COMMON_OFFLOAD
+ 	else {
+ 		adapter->tc_u32 = cxgb4_init_tc_u32(adapter);
+ 		if (!adapter->tc_u32)
+diff --git a/drivers/net/ethernet/chelsio/cxgb4/cxgb4_tc_flower.c b/drivers/net/ethernet/chelsio/cxgb4/cxgb4_tc_flower.c
+index 4b0ab63..1176b84 100644
+--- a/drivers/net/ethernet/chelsio/cxgb4/cxgb4_tc_flower.c
++++ b/drivers/net/ethernet/chelsio/cxgb4/cxgb4_tc_flower.c
+@@ -41,7 +41,7 @@
+ #include "cxgb4_filter.h"
+ #include "cxgb4_tc_flower.h"
+ 
+-#ifndef RHEL_RELEASE_7_4
++#ifdef HAVE_TC_CLS_COMMON_OFFLOAD
+ 
+ #define STATS_CHECK_PERIOD (HZ / 2)
+ 
+diff --git a/drivers/net/ethernet/chelsio/cxgb4/cxgb4_tc_u32.c b/drivers/net/ethernet/chelsio/cxgb4/cxgb4_tc_u32.c
+index 326fc95..3849e37 100644
+--- a/drivers/net/ethernet/chelsio/cxgb4/cxgb4_tc_u32.c
++++ b/drivers/net/ethernet/chelsio/cxgb4/cxgb4_tc_u32.c
+@@ -39,7 +39,7 @@
+ #include "cxgb4_tc_u32_parse.h"
+ #include "cxgb4_tc_u32.h"
+ 
+-#ifndef RHEL_RELEASE_7_4
++#ifdef HAVE_TC_CLS_COMMON_OFFLOAD
+ 
+ /* Fill ch_filter_specification with parsed match value/mask pair. */
+ static int fill_match_fields(struct adapter *adap,
+-- 
+2.12.3
+
