@@ -1,0 +1,34 @@
+From b6890bd132343763a69ab24547d277555c17adc4 Mon Sep 17 00:00:00 2001
+From: Steve Wise <swise@opengridcomputing.com>
+Date: Thu, 21 Jun 2018 07:43:21 -0700
+Subject: [PATCH 2/3] iw_cxgb4: correctly enforce the max reg_mr depth
+
+The code was mistakenly using the length of the page array memory instead
+of the depth of the page array.
+
+This would cause MR creation to fail in some cases.
+
+Fixes: 8376b86de7d3 ("iw_cxgb4: Support the new memory registration API")
+Cc: stable@vger.kernel.org
+Signed-off-by: Steve Wise <swise@opengridcomputing.com>
+Signed-off-by: Jason Gunthorpe <jgg@mellanox.com>
+---
+ drivers/infiniband/hw/cxgb4/mem.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/infiniband/hw/cxgb4/mem.c b/drivers/infiniband/hw/cxgb4/mem.c
+index 6874cf2..0bdae67 100644
+--- a/drivers/infiniband/hw/cxgb4/mem.c
++++ b/drivers/infiniband/hw/cxgb4/mem.c
+@@ -784,7 +784,7 @@ static int c4iw_set_page(struct ib_mr *ibmr, u64 addr)
+ {
+ 	struct c4iw_mr *mhp = to_c4iw_mr(ibmr);
+ 
+-	if (unlikely(mhp->mpl_len == mhp->max_mpl_len))
++	if (unlikely(mhp->mpl_len == mhp->attr.pbl_size))
+ 		return -ENOMEM;
+ 
+ 	mhp->mpl[mhp->mpl_len++] = addr;
+-- 
+1.8.3.1
+
