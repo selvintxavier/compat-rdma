@@ -1,4 +1,4 @@
-From 8a8633978b842c88fbcfe00d4e5dde96048f630e Mon Sep 17 00:00:00 2001
+From 9cd318eacf44d8febca72286ac1e6ceeec041f1c Mon Sep 17 00:00:00 2001
 From: Manish Chopra <manish.chopra@cavium.com>
 Date: Thu, 17 May 2018 12:05:00 -0700
 Subject: [PATCH 14/44] qede: Add build_skb() support.
@@ -51,14 +51,14 @@ Signed-off-by: David S. Miller <davem@davemloft.net>
  drivers/net/ethernet/qlogic/qede/qede.h         |   5 +-
  drivers/net/ethernet/qlogic/qede/qede_ethtool.c |   3 +-
  drivers/net/ethernet/qlogic/qede/qede_fp.c      | 227 +++++++++++++-----------
- drivers/net/ethernet/qlogic/qede/qede_main.c    |  76 ++------
- 4 files changed, 137 insertions(+), 174 deletions(-)
+ drivers/net/ethernet/qlogic/qede/qede_main.c    |  74 ++------
+ 4 files changed, 136 insertions(+), 173 deletions(-)
 
 diff --git a/drivers/net/ethernet/qlogic/qede/qede.h b/drivers/net/ethernet/qlogic/qede/qede.h
-index 9935978c..2d3f09e 100644
+index 88ea270..a003bec 100644
 --- a/drivers/net/ethernet/qlogic/qede/qede.h
 +++ b/drivers/net/ethernet/qlogic/qede/qede.h
-@@ -290,15 +290,12 @@ struct qede_agg_info {
+@@ -301,15 +301,12 @@ struct qede_agg_info {
  	 * aggregation.
  	 */
  	struct sw_rx_data buffer;
@@ -90,10 +90,10 @@ index ecbf1de..8c6fdad 100644
  		    ether_addr_equal(data_ptr + ETH_ALEN,
  				     edev->ndev->dev_addr)) {
 diff --git a/drivers/net/ethernet/qlogic/qede/qede_fp.c b/drivers/net/ethernet/qlogic/qede/qede_fp.c
-index 1494130..6c70239 100644
+index b589b70..8a99e4d 100644
 --- a/drivers/net/ethernet/qlogic/qede/qede_fp.c
 +++ b/drivers/net/ethernet/qlogic/qede/qede_fp.c
-@@ -660,7 +660,8 @@ static int qede_fill_frag_skb(struct qede_dev *edev,
+@@ -668,7 +668,8 @@ static int qede_fill_frag_skb(struct qede_dev *edev,
  
  	/* Add one frag and update the appropriate fields in the skb */
  	skb_fill_page_desc(skb, tpa_info->frag_id++,
@@ -103,7 +103,7 @@ index 1494130..6c70239 100644
  			   len_on_bd);
  
  	if (unlikely(qede_realloc_rx_buffer(rxq, current_bd))) {
-@@ -671,8 +672,7 @@ static int qede_fill_frag_skb(struct qede_dev *edev,
+@@ -679,8 +680,7 @@ static int qede_fill_frag_skb(struct qede_dev *edev,
  		goto out;
  	}
  
@@ -113,7 +113,7 @@ index 1494130..6c70239 100644
  
  	skb->data_len += len_on_bd;
  	skb->truesize += rxq->rx_buf_seg_size;
-@@ -721,64 +721,129 @@ static u8 qede_check_tunn_csum(u16 flag)
+@@ -729,64 +729,129 @@ static u8 qede_check_tunn_csum(u16 flag)
  	return QEDE_CSUM_UNNECESSARY | tcsum;
  }
  
@@ -282,7 +282,7 @@ index 1494130..6c70239 100644
  	if ((le16_to_cpu(cqe->pars_flags.flags) >>
  	     PARSING_AND_ERR_FLAGS_TAG8021QEXIST_SHIFT) &
  	    PARSING_AND_ERR_FLAGS_TAG8021QEXIST_MASK)
-@@ -899,6 +964,10 @@ static int qede_tpa_end(struct qede_dev *edev,
+@@ -907,6 +972,10 @@ static int qede_tpa_end(struct qede_dev *edev,
  	tpa_info = &rxq->tpa_info[cqe->tpa_agg_index];
  	skb = tpa_info->skb;
  
@@ -293,7 +293,7 @@ index 1494130..6c70239 100644
  	for (i = 0; cqe->len_list[i]; i++)
  		qede_fill_frag_skb(edev, rxq, cqe->tpa_agg_index,
  				   le16_to_cpu(cqe->len_list[i]));
-@@ -919,11 +988,6 @@ static int qede_tpa_end(struct qede_dev *edev,
+@@ -927,11 +996,6 @@ static int qede_tpa_end(struct qede_dev *edev,
  		       "Strange - total packet len [cqe] is %4x but SKB has len %04x\n",
  		       le16_to_cpu(cqe->total_packet_len), skb->len);
  
@@ -305,7 +305,7 @@ index 1494130..6c70239 100644
  	/* Finalize the SKB */
  	skb->protocol = eth_type_trans(skb, edev->ndev);
  	skb->ip_summed = CHECKSUM_UNNECESSARY;
-@@ -940,6 +1004,12 @@ static int qede_tpa_end(struct qede_dev *edev,
+@@ -948,6 +1012,12 @@ static int qede_tpa_end(struct qede_dev *edev,
  	return 1;
  err:
  	tpa_info->state = QEDE_AGG_STATE_NONE;
@@ -318,9 +318,9 @@ index 1494130..6c70239 100644
  	dev_kfree_skb_any(tpa_info->skb);
  	tpa_info->skb = NULL;
  	return 0;
-@@ -1058,65 +1128,6 @@ static bool qede_rx_xdp(struct qede_dev *edev,
- 	return false;
+@@ -1071,65 +1141,6 @@ static bool qede_rx_xdp(struct qede_dev *edev,
  }
+ #endif
  
 -static struct sk_buff *qede_rx_allocate_skb(struct qede_dev *edev,
 -					    struct qede_rx_queue *rxq,
@@ -384,7 +384,7 @@ index 1494130..6c70239 100644
  static int qede_rx_build_jumbo(struct qede_dev *edev,
  			       struct qede_rx_queue *rxq,
  			       struct sk_buff *skb,
-@@ -1157,7 +1168,7 @@ static int qede_rx_build_jumbo(struct qede_dev *edev,
+@@ -1170,7 +1181,7 @@ static int qede_rx_build_jumbo(struct qede_dev *edev,
  			       PAGE_SIZE, DMA_FROM_DEVICE);
  
  		skb_fill_page_desc(skb, skb_shinfo(skb)->nr_frags++,
@@ -393,7 +393,7 @@ index 1494130..6c70239 100644
  
  		skb->truesize += PAGE_SIZE;
  		skb->data_len += cur_size;
-@@ -1256,7 +1267,7 @@ static int qede_rx_process_cqe(struct qede_dev *edev,
+@@ -1273,7 +1284,7 @@ static int qede_rx_process_cqe(struct qede_dev *edev,
  	/* Basic validation passed; Need to prepare an SKB. This would also
  	 * guarantee to finally consume the first BD upon success.
  	 */
@@ -403,10 +403,10 @@ index 1494130..6c70239 100644
  		rxq->rx_alloc_errors++;
  		qede_recycle_rx_bd_ring(rxq, fp_cqe->bd_num);
 diff --git a/drivers/net/ethernet/qlogic/qede/qede_main.c b/drivers/net/ethernet/qlogic/qede/qede_main.c
-index 89c581c..40e2b92 100644
+index 9540bc7..daf766b 100644
 --- a/drivers/net/ethernet/qlogic/qede/qede_main.c
 +++ b/drivers/net/ethernet/qlogic/qede/qede_main.c
-@@ -1197,30 +1197,8 @@ static void qede_free_rx_buffers(struct qede_dev *edev,
+@@ -1242,30 +1242,8 @@ static void qede_free_rx_buffers(struct qede_dev *edev,
  	}
  }
  
@@ -437,7 +437,7 @@ index 89c581c..40e2b92 100644
  	/* Free rx buffers */
  	qede_free_rx_buffers(edev, rxq);
  
-@@ -1232,45 +1210,15 @@ static void qede_free_mem_rxq(struct qede_dev *edev, struct qede_rx_queue *rxq)
+@@ -1277,45 +1255,15 @@ static void qede_free_mem_rxq(struct qede_dev *edev, struct qede_rx_queue *rxq)
  	edev->ops->common->chain_free(edev->cdev, &rxq->rx_comp_ring);
  }
  
@@ -484,39 +484,43 @@ index 89c581c..40e2b92 100644
  }
  
  /* This function allocates all memory needed per Rx queue */
-@@ -1281,19 +1229,24 @@ static int qede_alloc_mem_rxq(struct qede_dev *edev, struct qede_rx_queue *rxq)
- 	rxq->num_rx_buffers = edev->q_num_rx_buffers;
+@@ -1327,24 +1275,29 @@ static int qede_alloc_mem_rxq(struct qede_dev *edev, struct qede_rx_queue *rxq)
  
  	rxq->rx_buf_size = NET_IP_ALIGN + ETH_OVERHEAD + edev->ndev->mtu;
+ #ifdef HAVE_XDP
 -	rxq->rx_headroom = edev->xdp_prog ? XDP_PACKET_HEADROOM : 0;
-+
 +	rxq->rx_headroom = edev->xdp_prog ? XDP_PACKET_HEADROOM : NET_SKB_PAD;
+ #else
+ 	rxq->rx_headroom = 0;
+ #endif
 +	size = rxq->rx_headroom +
-+	       SKB_DATA_ALIGN(sizeof(struct skb_shared_info));
- 
++               SKB_DATA_ALIGN(sizeof(struct skb_shared_info));
++
  	/* Make sure that the headroom and  payload fit in a single page */
 -	if (rxq->rx_buf_size + rxq->rx_headroom > PAGE_SIZE)
 -		rxq->rx_buf_size = PAGE_SIZE - rxq->rx_headroom;
 +	if (rxq->rx_buf_size + size > PAGE_SIZE)
 +		rxq->rx_buf_size = PAGE_SIZE - size;
  
--	/* Segment size to spilt a page in multiple equal parts,
-+	/* Segment size to spilt a page in multiple equal parts ,
+ 	/* Segment size to spilt a page in multiple equal parts,
  	 * unless XDP is used in which case we'd use the entire page.
  	 */
+ #ifdef HAVE_XDP
 -	if (!edev->xdp_prog)
--		rxq->rx_buf_seg_size = roundup_pow_of_two(rxq->rx_buf_size);
--	else
 +	if (!edev->xdp_prog) {
+ #endif
+-		rxq->rx_buf_seg_size = roundup_pow_of_two(rxq->rx_buf_size);
 +		size = size + rxq->rx_buf_size;
 +		rxq->rx_buf_seg_size = roundup_pow_of_two(size);
+ #ifdef HAVE_XDP
+-	else
 +	} else {
  		rxq->rx_buf_seg_size = PAGE_SIZE;
 +	}
+ #endif
  
  	/* Allocate the parallel driver ring for Rx buffers */
- 	size = sizeof(*rxq->sw_rx_ring) * RX_RING_SIZE;
-@@ -1337,7 +1290,8 @@ static int qede_alloc_mem_rxq(struct qede_dev *edev, struct qede_rx_queue *rxq)
+@@ -1389,7 +1342,8 @@ static int qede_alloc_mem_rxq(struct qede_dev *edev, struct qede_rx_queue *rxq)
  		}
  	}
  
@@ -527,5 +531,5 @@ index 89c581c..40e2b92 100644
  	return rc;
  }
 -- 
-2.9.5
+1.8.3.1
 

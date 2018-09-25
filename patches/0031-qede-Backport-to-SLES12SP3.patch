@@ -1,0 +1,129 @@
+From 2963fb1c60c84751a0f95ddb0f3f631ce308f344 Mon Sep 17 00:00:00 2001
+From: Michal Kalderon <michal.kalderon@cavium.com>
+Date: Tue, 25 Sep 2018 18:32:27 +0300
+Subject: [PATCH] qede: SLES12SP3 BACKPORT
+
+Signed-off-by: Michal Kalderon <michal.kalderon@cavium.com>
+---
+ drivers/net/ethernet/qlogic/qede/qede.h        |  4 ++++
+ drivers/net/ethernet/qlogic/qede/qede_filter.c |  2 ++
+ drivers/net/ethernet/qlogic/qede/qede_fp.c     |  4 ++++
+ drivers/net/ethernet/qlogic/qede/qede_main.c   | 14 ++++++++++++--
+ 4 files changed, 22 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/ethernet/qlogic/qede/qede.h b/drivers/net/ethernet/qlogic/qede/qede.h
+index 0386a7a..88ea270 100644
+--- a/drivers/net/ethernet/qlogic/qede/qede.h
++++ b/drivers/net/ethernet/qlogic/qede/qede.h
+@@ -39,7 +39,9 @@
+ #include <linux/bitmap.h>
+ #include <linux/kernel.h>
+ #include <linux/mutex.h>
++#ifdef HAVE_XDP
+ #include <linux/bpf.h>
++#endif
+ #ifdef HAVE_NET_XDP_H
+ #include <net/xdp.h>
+ #endif
+@@ -515,8 +517,10 @@ void qede_config_rx_mode(struct net_device *ndev);
+ void qede_fill_rss_params(struct qede_dev *edev,
+ 			  struct qed_update_vport_rss_params *rss, u8 *update);
+ 
++#ifdef HAVE_UDP_TUNNEL_GET_RX_INFO
+ void qede_udp_tunnel_add(struct net_device *dev, struct udp_tunnel_info *ti);
+ void qede_udp_tunnel_del(struct net_device *dev, struct udp_tunnel_info *ti);
++#endif
+ 
+ #ifdef HAVE_NETDEV_BPF
+ int qede_xdp(struct net_device *dev, struct netdev_bpf *xdp);
+diff --git a/drivers/net/ethernet/qlogic/qede/qede_filter.c b/drivers/net/ethernet/qlogic/qede/qede_filter.c
+index 9da9e1e..57edea4 100644
+--- a/drivers/net/ethernet/qlogic/qede/qede_filter.c
++++ b/drivers/net/ethernet/qlogic/qede/qede_filter.c
+@@ -955,6 +955,7 @@ int qede_set_features(struct net_device *dev, netdev_features_t features)
+ 	return 0;
+ }
+ 
++#ifdef HAVE_UDP_TUNNEL_GET_RX_INFO
+ void qede_udp_tunnel_add(struct net_device *dev, struct udp_tunnel_info *ti)
+ {
+ 	struct qede_dev *edev = netdev_priv(dev);
+@@ -1065,6 +1066,7 @@ void qede_udp_tunnel_del(struct net_device *dev,
+ 		return;
+ 	}
+ }
++#endif
+ 
+ #ifdef HAVE_XDP
+ static void qede_xdp_reload_func(struct qede_dev *edev,
+diff --git a/drivers/net/ethernet/qlogic/qede/qede_fp.c b/drivers/net/ethernet/qlogic/qede/qede_fp.c
+index 766b1c9..b589b70 100644
+--- a/drivers/net/ethernet/qlogic/qede/qede_fp.c
++++ b/drivers/net/ethernet/qlogic/qede/qede_fp.c
+@@ -44,6 +44,10 @@
+ 
+ #include <linux/qed/qed_if.h>
+ #include "qede.h"
++
++#ifndef HAVE_LINUX_PAGE_REF_H
++#define page_ref_inc(val) atomic_inc(&val->_count)
++#endif
+ /*********************************
+  * Content also used by slowpath *
+  *********************************/
+diff --git a/drivers/net/ethernet/qlogic/qede/qede_main.c b/drivers/net/ethernet/qlogic/qede/qede_main.c
+index 1b0bcb5..5b05683 100644
+--- a/drivers/net/ethernet/qlogic/qede/qede_main.c
++++ b/drivers/net/ethernet/qlogic/qede/qede_main.c
+@@ -47,7 +47,9 @@
+ #include <linux/netdev_features.h>
+ #include <linux/udp.h>
+ #include <linux/tcp.h>
++#ifdef HAVE_UDP_TUNNEL_GET_RX_INFO
+ #include <net/udp_tunnel.h>
++#endif
+ #include <linux/ip.h>
+ #include <net/ipv6.h>
+ #include <net/tcp.h>
+@@ -1324,8 +1326,11 @@ static int qede_alloc_mem_rxq(struct qede_dev *edev, struct qede_rx_queue *rxq)
+ 	rxq->num_rx_buffers = edev->q_num_rx_buffers;
+ 
+ 	rxq->rx_buf_size = NET_IP_ALIGN + ETH_OVERHEAD + edev->ndev->mtu;
++#ifdef HAVE_XDP
+ 	rxq->rx_headroom = edev->xdp_prog ? XDP_PACKET_HEADROOM : 0;
+-
++#else
++	rxq->rx_headroom = 0;
++#endif
+ 	/* Make sure that the headroom and  payload fit in a single page */
+ 	if (rxq->rx_buf_size + rxq->rx_headroom > PAGE_SIZE)
+ 		rxq->rx_buf_size = PAGE_SIZE - rxq->rx_headroom;
+@@ -1333,10 +1338,14 @@ static int qede_alloc_mem_rxq(struct qede_dev *edev, struct qede_rx_queue *rxq)
+ 	/* Segment size to spilt a page in multiple equal parts,
+ 	 * unless XDP is used in which case we'd use the entire page.
+ 	 */
++#ifdef HAVE_XDP
+ 	if (!edev->xdp_prog)
++#endif
+ 		rxq->rx_buf_seg_size = roundup_pow_of_two(rxq->rx_buf_size);
++#ifdef HAVE_XDP
+ 	else
+ 		rxq->rx_buf_seg_size = PAGE_SIZE;
++#endif
+ 
+ 	/* Allocate the parallel driver ring for Rx buffers */
+ 	size = sizeof(*rxq->sw_rx_ring) * RX_RING_SIZE;
+@@ -2182,8 +2191,9 @@ static int qede_open(struct net_device *ndev)
+ 	rc = qede_load(edev, QEDE_LOAD_NORMAL, false);
+ 	if (rc)
+ 		return rc;
+-
++#ifdef HAVE_UDP_TUNNEL_GET_RX_INFO
+ 	udp_tunnel_get_rx_info(ndev);
++#endif
+ 
+ 	edev->ops->common->update_drv_state(edev->cdev, true);
+ 
+-- 
+1.8.3.1
+
