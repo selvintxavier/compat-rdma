@@ -5,7 +5,7 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
 ---
  drivers/infiniband/core/addr.c          |  18 +++-
  drivers/infiniband/core/cma.c           |  27 ++++++
- drivers/infiniband/core/cma_configfs.c  |  93 ++++++++++++++++++++
+ drivers/infiniband/core/cma_configfs.c  | 104 ++++++++++++++++++++++
  drivers/infiniband/core/core_priv.h     |  36 ++++++++
  drivers/infiniband/core/cq.c            |  35 +++++++-
  drivers/infiniband/core/device.c        |  32 +++++++
@@ -26,7 +26,7 @@ Signed-off-by: Vladimir Sokolovsky <vlad@mellanox.com>
  include/rdma/ib_verbs.h                 | 147 ++++++++++++++++++++++++++++++++
  include/rdma/rdma_netlink.h             |   4 +
  include/rdma/restrack.h                 |   3 +
- 23 files changed, 768 insertions(+), 2 deletions(-)
+ 23 files changed, 779 insertions(+), 2 deletions(-)
 
 diff --git a/drivers/infiniband/core/addr.c b/drivers/infiniband/core/addr.c
 index xxxxxxx..xxxxxxx xxxxxx
@@ -228,19 +228,30 @@ index xxxxxxx..xxxxxxx xxxxxx
  static int cma_configfs_params_get(struct config_item *item,
  				   struct cma_device **pcma_dev,
  				   struct cma_dev_port_group **pgroup)
-@@ -186,7 +235,11 @@ static struct configfs_attribute *cma_configfs_attributes[] = {
+@@ -186,7 +235,22 @@ static struct configfs_attribute *cma_configfs_attributes[] = {
  	NULL,
  };
  
++#ifdef HAVE_OLD_CONFIGFS_API
++static struct configfs_item_operations cma_item_ops = {
++	.show_attribute		= cma_configfs_attr_show,
++	.store_attribute	= cma_configfs_attr_store,
++};
++#else /* HAVE_OLD_CONFIGFS_API */
++static struct configfs_item_operations cma_item_ops = {
++};
++#endif
++
 +#ifdef CONFIG_GROUP_INIT_TYPE_NAME_PARAM_3_IS_CONST
  static const struct config_item_type cma_port_group_type = {
 +#else
 +static struct config_item_type cma_port_group_type = {
 +#endif
++	.ct_item_ops	= &cma_item_ops,
  	.ct_attrs	= cma_configfs_attributes,
  	.ct_owner	= THIS_MODULE
  };
-@@ -214,6 +267,14 @@ static int make_cma_ports(struct cma_dev_group *cma_dev_group,
+@@ -214,6 +278,14 @@ static int make_cma_ports(struct cma_dev_group *cma_dev_group,
  		goto free;
  	}
  
@@ -255,7 +266,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	for (i = 0; i < ports_num; i++) {
  		char port_str[10];
  
-@@ -223,10 +284,17 @@ static int make_cma_ports(struct cma_dev_group *cma_dev_group,
+@@ -223,10 +295,17 @@ static int make_cma_ports(struct cma_dev_group *cma_dev_group,
  		config_group_init_type_name(&ports[i].group,
  					    port_str,
  					    &cma_port_group_type);
@@ -273,7 +284,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	cma_dev_group->ports = ports;
  
  	return 0;
-@@ -263,7 +331,11 @@ static struct configfs_item_operations cma_ports_item_ops = {
+@@ -263,7 +342,11 @@ static struct configfs_item_operations cma_ports_item_ops = {
  	.release = release_cma_ports_group
  };
  
@@ -285,7 +296,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	.ct_item_ops	= &cma_ports_item_ops,
  	.ct_owner	= THIS_MODULE
  };
-@@ -272,7 +344,11 @@ static struct configfs_item_operations cma_device_item_ops = {
+@@ -272,7 +355,11 @@ static struct configfs_item_operations cma_device_item_ops = {
  	.release = release_cma_dev
  };
  
@@ -297,7 +308,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  	.ct_item_ops	= &cma_device_item_ops,
  	.ct_owner	= THIS_MODULE
  };
-@@ -302,16 +378,29 @@ static struct config_group *make_cma_dev(struct config_group *group,
+@@ -302,16 +389,29 @@ static struct config_group *make_cma_dev(struct config_group *group,
  
  	err = make_cma_ports(cma_dev_group, cma_dev);
  	if (err)
@@ -327,7 +338,7 @@ index xxxxxxx..xxxxxxx xxxxxx
  fail:
  	if (cma_dev)
  		cma_deref_dev(cma_dev);
-@@ -323,7 +412,11 @@ static struct configfs_group_operations cma_subsys_group_ops = {
+@@ -323,7 +423,11 @@ static struct configfs_group_operations cma_subsys_group_ops = {
  	.make_group	= make_cma_dev,
  };
  
