@@ -1,0 +1,36 @@
+From e40bbdf2f5e4a4ef71a4034033056e46ec9f6d50 Mon Sep 17 00:00:00 2001
+From: Selvin Xavier <selvin.xavier@broadcom.com>
+Date: Mon, 11 Mar 2019 13:26:59 -0400
+Subject: [PATCH] bnxt_en: Fix RH 7.6 compilation issue
+
+Add HAVE_NDO_SETUP_TC check for bnxt_setup_tc
+
+Signed-off-by: Selvin Xavier <selvin.xavier@broadcom.com>
+---
+ drivers/net/ethernet/broadcom/bnxt/bnxt.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/ethernet/broadcom/bnxt/bnxt.c b/drivers/net/ethernet/broadcom/bnxt/bnxt.c
+index 1a319fd..6ce60d4 100644
+--- a/drivers/net/ethernet/broadcom/bnxt/bnxt.c
++++ b/drivers/net/ethernet/broadcom/bnxt/bnxt.c
+@@ -8021,6 +8021,7 @@ static int bnxt_setup_flower(struct net_device *dev,
+ #endif
+ #endif
+ 
++#ifdef HAVE_NDO_SETUP_TC
+ #if !defined(HAVE_NDO_SETUP_TC_RH72)
+ #ifdef HAVE_NDO_SETUP_TC_TAKES_TC_SETUP_TYPE
+ static int bnxt_setup_tc(struct net_device *dev, enum tc_setup_type type,
+@@ -8082,7 +8083,7 @@ static int bnxt_setup_tc(struct net_device *dev, u32 handle, __be16 proto,
+ #endif /* HAVE_TC_TO_NETDEV_TC */
+ #endif /* HAVE_NDO_SETUP_TC_TAKES_TC_SETUP_TYPE */
+ #endif /* HAVE_NDO_SETUP_TC_RH72 */
+-
++#endif /* HAVE_NDO_SETUP_TC */
+ #ifdef CONFIG_RFS_ACCEL
+ static bool bnxt_fltr_match(struct bnxt_ntuple_filter *f1,
+ 			    struct bnxt_ntuple_filter *f2)
+-- 
+1.8.3.1
+
